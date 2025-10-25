@@ -29,15 +29,84 @@ const fs = require("fs");
 
 // MULTER SETUP
 // Main Upload
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../uploads"); // Go up one level from Router folder
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     const uploadPath = path.join(__dirname, "../uploads"); // Go up one level from Router folder
 
-    // Create directory if it doesn't exist
+//     // Create directory if it doesn't exist
+//     if (!fs.existsSync(uploadPath)) {
+//       fs.mkdirSync(uploadPath, { recursive: true });
+//     }
+
+//     cb(null, uploadPath);
+//   },
+//   filename: function (req, file, cb) {
+//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+//     cb(null, unique + "-" + file.originalname);
+//   },
+// });
+
+// // ─── AGENT-SPECIFIC UPLOAD ───────────────────────────────────────
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     const uploadDir = path.join(__dirname, "../uploads");
+//     if (!fs.existsSync(uploadDir)) {
+//       fs.mkdirSync(uploadDir, { recursive: true });
+//     }
+//     cb(null, uploadDir);
+//   },
+//   filename: (req, file, cb) => {
+//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+//     cb(null, unique + "-" + file.originalname);
+//   },
+// });
+
+// // Agent storage (separate for agents)
+// const agentStorage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     const agentDir = path.join(__dirname, "../uploads/agents");
+//     if (!fs.existsSync(agentDir)) {
+//       fs.mkdirSync(agentDir, { recursive: true });
+//     }
+//     cb(null, agentDir);
+//   },
+//   filename: (req, file, cb) => {
+//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+//     const ext = path.extname(file.originalname);
+//     cb(null, `agent-${unique}${ext}`);
+//   },
+// });
+
+// // File filter for images
+// const fileFilter = (req, file, cb) => {
+//   if (file.mimetype.startsWith("image/")) {
+//     cb(null, true);
+//   } else {
+//     cb(new Error("Only image files are allowed!"), false);
+//   }
+// };
+
+// // Agent upload middleware
+// const agentUpload = multer({
+//   storage: agentStorage,
+//   fileFilter,
+//   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+// });
+
+// // General upload middleware
+// const upload = multer({
+//   storage,
+//   fileFilter,
+//   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+// });
+
+
+const mainStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(__dirname, "../uploads");
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
     }
-
     cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
@@ -46,33 +115,43 @@ const storage = multer.diskStorage({
   },
 });
 
-// ─── AGENT-SPECIFIC UPLOAD ───────────────────────────────────────
+// Agent storage - separate directory for agent images
 const agentStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const agentDir = path.join(__dirname, "../uploads/agents");
-    if (!fs.existsSync(agentDir)) fs.mkdirSync(agentDir, { recursive: true });
+    if (!fs.existsSync(agentDir)) {
+      fs.mkdirSync(agentDir, { recursive: true });
+    }
     cb(null, agentDir);
   },
   filename: (req, file, cb) => {
     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + "-" + file.originalname);
+    const ext = path.extname(file.originalname);
+    cb(null, `agent-${unique}${ext}`);
   },
 });
 
+// File filter - only allow images
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) cb(null, true);
-  else cb(new Error("Only image files are allowed!"), false);
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed!"), false);
+  }
 };
+
+// Agent-specific upload middleware
 const agentUpload = multer({
   storage: agentStorage,
   fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
 });
 
+// General upload middleware (for blogs, news, hero content, etc.)
 const upload = multer({
-  storage,
+  storage: mainStorage,
   fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
 });
 
 // Hero Content
@@ -198,9 +277,10 @@ router.post(
   agentUpload.single("imageUrl"),
   AgentController.createAgent
 );
+// Your route is already correct!
 router.post(
   "/update-agent",
-  agentUpload.single("imageUrl"),
+  agentUpload.single("image"),  // ✅ Field name matches what frontend sends
   AgentController.updateAgent
 );
 

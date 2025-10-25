@@ -1334,6 +1334,7 @@ const getAgentByEmail = async (req, res) => {
 const updateAgent = async (req, res) => {
   try {
     const { agentId, ...requestFields } = req.body || {};
+    
     if (!agentId) {
       return res.status(400).json({ success: false, error: "Agent ID is required" });
     }
@@ -1357,8 +1358,7 @@ const updateAgent = async (req, res) => {
         if (typeof Agent.swapSequenceNumbers !== "function") {
           return res.status(500).json({
             success: false,
-            error:
-              "Sequence swap not available: Agent.swapSequenceNumbers is undefined. Implement it on the model.",
+            error: "Sequence swap not available: Agent.swapSequenceNumbers is undefined.",
           });
         }
         try {
@@ -1436,6 +1436,7 @@ const updateAgent = async (req, res) => {
         }
       }
 
+      // ✅ Handle file upload - matches the field name "imageUrl"
       if (file) {
         updateObj.imageUrl = `/uploads/agents/${file.filename}`;
       }
@@ -1456,7 +1457,7 @@ const updateAgent = async (req, res) => {
       });
     }
 
-    // Email uniqueness
+    // Email uniqueness check
     if (updateFields.email) {
       const emailExists = await Agent.findOne({
         email: updateFields.email,
@@ -1483,6 +1484,7 @@ const updateAgent = async (req, res) => {
     });
   } catch (err) {
     console.error("Update agent error:", err);
+    
     if (err?.code === 11000) {
       const field = Object.keys(err.keyPattern || {})[0];
       const value = err.keyValue?.[field];
@@ -1491,7 +1493,11 @@ const updateAgent = async (req, res) => {
         error: `${field?.[0]?.toUpperCase()}${field?.slice(1)} "${value}" already exists`,
       });
     }
-    return res.status(400).json({ success: false, error: err.message });
+    
+    return res.status(400).json({ 
+      success: false, 
+      error: err.message || "Failed to update agent" 
+    });
   }
 };
 
