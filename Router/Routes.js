@@ -49,7 +49,7 @@ const storage = multer.diskStorage({
 // ─── AGENT-SPECIFIC UPLOAD ───────────────────────────────────────
 const agentStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const agentDir = path.join(__dirname, "../uploads/Agents");
+    const agentDir = path.join(__dirname, "../uploads/agents");
     if (!fs.existsSync(agentDir)) fs.mkdirSync(agentDir, { recursive: true });
     cb(null, agentDir);
   },
