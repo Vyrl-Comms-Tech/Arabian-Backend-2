@@ -116,19 +116,19 @@ function ensureValidMonth(value = "this_month") {
 // -----------------------------
 const createAgent = async (req, res) => {
   try {
-    // Do not log full bodies with potential PII
-    // console.debug("createAgent payload keys:", Object.keys(req.body || {}));
-
-    // file upload → imageUrl
+    // ✅ CLOUDINARY: Get the full Cloudinary URL from uploaded file
+    let imageUrl = null;
     if (req.file) {
-      req.body.imageUrl = `/uploads/agents/${req.file.filename}`;
+      imageUrl = req.file.path; // Cloudinary returns full URL in req.file.path
+      req.body.imageUrl = imageUrl;
     }
 
+    // Handle superAgent boolean
     if (req.body.superAgent !== undefined) {
       req.body.superAgent = isTruthy(req.body.superAgent);
     }
 
-    // validate and enforce unique sequenceNumber if provided
+    // Validate and enforce unique sequenceNumber if provided
     if (req.body.sequenceNumber) {
       const sequenceNumber = clampInt(req.body.sequenceNumber);
       if (sequenceNumber < 1) {
@@ -147,9 +147,17 @@ const createAgent = async (req, res) => {
       req.body.sequenceNumber = sequenceNumber;
     }
 
+    // Create agent with Cloudinary URL
     const agent = await Agent.create(req.body);
-    return res.status(201).json({ success: true, data: agent });
+
+    return res.status(201).json({ 
+      success: true, 
+      data: agent,
+      imageUrl: imageUrl // ✅ Return Cloudinary URL for confirmation
+    });
+
   } catch (err) {
+    console.error("Create agent error:", err);
     return res.status(400).json({ success: false, error: err.message });
   }
 };
@@ -189,10 +197,13 @@ const getAgentByEmail = async (req, res) => {
 // -----------------------------
 // Update agent (+ sequence swap)
 // -----------------------------
+// ✅ ADD THIS IMPORT AT THE TOP OF YOUR FILE
+const cloudinary = require('cloudinary').v2;
+
 const updateAgent = async (req, res) => {
   try {
     const { agentId, ...requestFields } = req.body || {};
-    
+
     if (!agentId) {
       return res.status(400).json({ success: false, error: "Agent ID is required" });
     }
@@ -294,9 +305,9 @@ const updateAgent = async (req, res) => {
         }
       }
 
-      // ✅ Handle file upload - matches the field name "imageUrl"
+      // ✅ CLOUDINARY: Handle file upload with full URL
       if (file) {
-        updateObj.imageUrl = `/uploads/agents/${file.filename}`;
+        updateObj.imageUrl = file.path; // Cloudinary full URL
       }
 
       updateObj.lastUpdated = new Date();
@@ -329,6 +340,24 @@ const updateAgent = async (req, res) => {
       }
     }
 
+    // ✅ CLOUDINARY: Delete old image if new one is uploaded
+    if (req.file && existingAgent.imageUrl) {
+      try {
+        // Extract public_id from Cloudinary URL
+        // Example URL: https://res.cloudinary.com/dxxxxxxxx/image/upload/v123456/agent-images/agent-123456789.jpg
+        const urlParts = existingAgent.imageUrl.split('/');
+        const publicIdWithExt = urlParts[urlParts.length - 1]; // agent-123456789.jpg
+        const publicIdWithoutExt = publicIdWithExt.split('.')[0]; // agent-123456789
+        const fullPublicId = `agent-images/${publicIdWithoutExt}`; // agent-images/agent-123456789
+
+        await cloudinary.uploader.destroy(fullPublicId);
+        console.log(`✅ Deleted old Cloudinary image: ${fullPublicId}`);
+      } catch (deleteError) {
+        console.error("⚠️ Error deleting old Cloudinary image:", deleteError.message);
+        // Continue with update even if deletion fails
+      }
+    }
+
     const updatedAgent = await Agent.findOneAndUpdate(
       { agentId },
       { $set: updateFields },
@@ -339,10 +368,12 @@ const updateAgent = async (req, res) => {
       success: true,
       message: `Agent updated successfully. Updated fields: ${effectiveKeys.join(", ")}`,
       data: updatedAgent,
+      imageUrl: updatedAgent.imageUrl // ✅ Return Cloudinary URL
     });
+
   } catch (err) {
     console.error("Update agent error:", err);
-    
+
     if (err?.code === 11000) {
       const field = Object.keys(err.keyPattern || {})[0];
       const value = err.keyValue?.[field];
@@ -351,10 +382,10 @@ const updateAgent = async (req, res) => {
         error: `${field?.[0]?.toUpperCase()}${field?.slice(1)} "${value}" already exists`,
       });
     }
-    
-    return res.status(400).json({ 
-      success: false, 
-      error: err.message || "Failed to update agent" 
+
+    return res.status(400).json({
+      success: false,
+      error: err.message || "Failed to update agent"
     });
   }
 };
@@ -614,7 +645,7 @@ function setupCronJobs() {
 // Manual API endpoints
 // -----------------------------
 
-const GetSalesForceToken=async (req,res)=>{
+const GetSalesForceToken = async (req, res) => {
   try {
     console.log("WORKING")
     const resp = await axios.post(
@@ -629,7 +660,7 @@ const GetSalesForceToken=async (req,res)=>{
           password: SALESFORCE.password,
         },
       }
-      
+
     );
     console.log(resp.data.access_token)
     return resp.data.access_token;

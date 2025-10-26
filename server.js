@@ -10,6 +10,7 @@ const fs = require('fs'); // ← ADD THIS MISSING IMPORT
 const ConnectDb = require('./Database/Db');
 const multer = require('multer');
 const router = require('./Router/Routes');
+const cloudinary = require('cloudinary').v2;
 
 // Set up middlewares
 app.use(cors());
@@ -18,6 +19,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded files statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // ---- Multer setup ---- 
 const storage = multer.diskStorage({
@@ -62,6 +68,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
 // Export upload middleware for use in routes
 module.exports.upload = upload;
+module.exports.cloudinary = cloudinary;
 
 
 // Agents with salesforce sync cron job

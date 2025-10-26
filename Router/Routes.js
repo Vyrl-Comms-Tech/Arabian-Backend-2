@@ -18,6 +18,10 @@ const Podcast = require("../Controllers/PodcastController");
 const HeroController = require("../Controllers/HeroContentController");
 //
 
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+
 // Import Agent Controller
 const AgentController = require("../Controllers/AgentController");
 
@@ -27,78 +31,12 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// MULTER SETUP
-// Main Upload
-// const storage = multer.diskStorage({
-//   destination: function (req, file, cb) {
-//     const uploadPath = path.join(__dirname, "../uploads"); // Go up one level from Router folder
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-//     // Create directory if it doesn't exist
-//     if (!fs.existsSync(uploadPath)) {
-//       fs.mkdirSync(uploadPath, { recursive: true });
-//     }
-
-//     cb(null, uploadPath);
-//   },
-//   filename: function (req, file, cb) {
-//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-//     cb(null, unique + "-" + file.originalname);
-//   },
-// });
-
-// // ─── AGENT-SPECIFIC UPLOAD ───────────────────────────────────────
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     const uploadDir = path.join(__dirname, "../uploads");
-//     if (!fs.existsSync(uploadDir)) {
-//       fs.mkdirSync(uploadDir, { recursive: true });
-//     }
-//     cb(null, uploadDir);
-//   },
-//   filename: (req, file, cb) => {
-//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-//     cb(null, unique + "-" + file.originalname);
-//   },
-// });
-
-// // Agent storage (separate for agents)
-// const agentStorage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     const agentDir = path.join(__dirname, "../uploads/agents");
-//     if (!fs.existsSync(agentDir)) {
-//       fs.mkdirSync(agentDir, { recursive: true });
-//     }
-//     cb(null, agentDir);
-//   },
-//   filename: (req, file, cb) => {
-//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-//     const ext = path.extname(file.originalname);
-//     cb(null, `agent-${unique}${ext}`);
-//   },
-// });
-
-// // File filter for images
-// const fileFilter = (req, file, cb) => {
-//   if (file.mimetype.startsWith("image/")) {
-//     cb(null, true);
-//   } else {
-//     cb(new Error("Only image files are allowed!"), false);
-//   }
-// };
-
-// // Agent upload middleware
-// const agentUpload = multer({
-//   storage: agentStorage,
-//   fileFilter,
-//   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-// });
-
-// // General upload middleware
-// const upload = multer({
-//   storage,
-//   fileFilter,
-//   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-// });
 
 
 const mainStorage = multer.diskStorage({
@@ -116,19 +54,21 @@ const mainStorage = multer.diskStorage({
 });
 
 // Agent storage - separate directory for agent images
-const agentStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const agentDir = path.join(__dirname, "../uploads/agents");
-    if (!fs.existsSync(agentDir)) {
-      fs.mkdirSync(agentDir, { recursive: true });
+const agentStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'agent-images', // Folder name in Cloudinary
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+    transformation: [
+      { width: 800, height: 800, crop: 'limit' }, // Max size
+      { quality: 'auto' } // Auto optimize
+    ],
+    public_id: (req, file) => {
+      // Generate unique filename
+      const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      return `agent-${unique}`;
     }
-    cb(null, agentDir);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `agent-${unique}${ext}`);
-  },
+  }
 });
 
 // File filter - only allow images
@@ -142,9 +82,9 @@ const fileFilter = (req, file, cb) => {
 
 // Agent-specific upload middleware
 const agentUpload = multer({
-  storage: agentStorage,
+  storage: agentStorage, // Using Cloudinary storage
   fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
 // General upload middleware (for blogs, news, hero content, etc.)
