@@ -200,38 +200,22 @@ const getAgentByEmail = async (req, res) => {
 // Update agent (+ sequence swap)
 // -----------------------------
 // ✅ ADD THIS IMPORT AT THE TOP OF YOUR FILE
-// ===== FIXED updateAgent Function =====
-// Add this import at the TOP of your AgentController.js file
 const cloudinary = require('cloudinary').v2;
 
 const updateAgent = async (req, res) => {
-  console.log("🔄 [UPDATE-AGENT] Request received");
-  console.log("📦 Body keys:", Object.keys(req.body));
-  console.log("📸 File present:", !!req.file);
-  
   try {
     const { agentId, ...requestFields } = req.body || {};
 
-    // 1️⃣ Validate Agent ID
     if (!agentId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Agent ID is required" 
-      });
+      return res.status(400).json({ success: false, error: "Agent ID is required" });
     }
 
-    // 2️⃣ Find existing agent
     const existingAgent = await Agent.findOne({ agentId });
     if (!existingAgent) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Agent not found" 
-      });
+      return res.status(404).json({ success: false, error: "Agent not found" });
     }
 
-    console.log(`✅ [UPDATE-AGENT] Agent found: ${existingAgent.agentName}`);
-
-    // 3️⃣ Handle sequenceNumber swap if changed
+    // Handle sequenceNumber swap if changed
     if (requestFields.sequenceNumber !== undefined) {
       const newSequenceNumber = clampInt(requestFields.sequenceNumber, NaN);
       if (!Number.isFinite(newSequenceNumber) || newSequenceNumber < 1) {
@@ -257,7 +241,6 @@ const updateAgent = async (req, res) => {
             data: updatedAgent,
           });
         } catch (swapError) {
-          console.error("❌ [UPDATE-AGENT] Sequence swap error:", swapError);
           return res.status(400).json({
             success: false,
             error: `Failed to update sequence number: ${swapError.message}`,
@@ -268,7 +251,7 @@ const updateAgent = async (req, res) => {
       }
     }
 
-    // 4️⃣ Build update object
+    // Build update object
     const buildUpdateObject = (fields, file, currentAgent) => {
       const updateObj = {};
       const allowedFields = [
@@ -324,17 +307,9 @@ const updateAgent = async (req, res) => {
         }
       }
 
-      // ✅ FIXED: Handle Cloudinary file upload
+      // ✅ CLOUDINARY: Handle file upload with full URL
       if (file) {
-        console.log("📸 [UPDATE-AGENT] Processing uploaded file");
-        console.log("   - Field name:", file.fieldname);
-        console.log("   - Original name:", file.originalname);
-        console.log("   - Size:", file.size);
-        console.log("   - Path:", file.path);
-        
-        // When using CloudinaryStorage, file.path is the full Cloudinary URL
-        updateObj.imageUrl = file.path;
-        console.log("✅ [UPDATE-AGENT] New image URL set:", file.path);
+        updateObj.imageUrl = file.path; // Cloudinary full URL
       }
 
       updateObj.lastUpdated = new Date();
@@ -343,7 +318,7 @@ const updateAgent = async (req, res) => {
 
     const updateFields = buildUpdateObject(requestFields, req.file, existingAgent);
 
-    // 5️⃣ Check if there are actual changes
+    // If no actual changes besides lastUpdated, return existing
     const effectiveKeys = Object.keys(updateFields).filter((k) => k !== "lastUpdated");
     if (effectiveKeys.length === 0) {
       return res.status(200).json({
@@ -353,9 +328,7 @@ const updateAgent = async (req, res) => {
       });
     }
 
-    console.log("📝 [UPDATE-AGENT] Fields to update:", effectiveKeys);
-
-    // 6️⃣ Email uniqueness check
+    // Email uniqueness check
     if (updateFields.email) {
       const emailExists = await Agent.findOne({
         email: updateFields.email,
@@ -369,89 +342,40 @@ const updateAgent = async (req, res) => {
       }
     }
 
-    // 7️⃣ ✅ FIXED: Delete old Cloudinary image if new one is uploaded
+    // ✅ CLOUDINARY: Delete old image if new one is uploaded
     if (req.file && existingAgent.imageUrl) {
-      console.log("🗑️  [UPDATE-AGENT] Attempting to delete old image:", existingAgent.imageUrl);
-      
-      // Only try to delete if it's a Cloudinary URL
-      if (existingAgent.imageUrl.includes('cloudinary.com')) {
-        try {
-          // ✅ FIXED: Correct public_id extraction
-          // Example URL: https://res.cloudinary.com/dxxxxxxxx/image/upload/v123456/agent-images/agent-123456789.jpg
-          const urlParts = existingAgent.imageUrl.split('/');
-          const uploadIndex = urlParts.indexOf('upload');
-          
-          if (uploadIndex !== -1 && uploadIndex + 1 < urlParts.length) {
-            // Get everything after 'upload/' (skip version if present)
-            let pathAfterUpload = urlParts.slice(uploadIndex + 1).join('/');
-            
-            // Remove version number if present (v1234567890/)
-            pathAfterUpload = pathAfterUpload.replace(/^v\d+\//, '');
-            
-            // Remove file extension
-            const publicId = pathAfterUpload.replace(/\.[^/.]+$/, '');
-            
-            console.log("🔑 [UPDATE-AGENT] Extracted public_id:", publicId);
-            
-            // Delete from Cloudinary
-            const deleteResult = await cloudinary.uploader.destroy(publicId);
-            
-            if (deleteResult.result === 'ok') {
-              console.log("✅ [UPDATE-AGENT] Old image deleted successfully");
-            } else if (deleteResult.result === 'not found') {
-              console.log("⚠️  [UPDATE-AGENT] Old image not found in Cloudinary (may have been deleted already)");
-            } else {
-              console.log("⚠️  [UPDATE-AGENT] Unexpected delete result:", deleteResult);
-            }
-          } else {
-            console.warn("⚠️  [UPDATE-AGENT] Could not parse Cloudinary URL structure");
-          }
-        } catch (deleteError) {
-          // ✅ Log but don't fail the update
-          console.error("⚠️  [UPDATE-AGENT] Error deleting old image:", deleteError.message);
-          // Continue with update even if deletion fails
-        }
-      } else {
-        console.log("ℹ️  [UPDATE-AGENT] Old image is not from Cloudinary, skipping deletion");
+      try {
+        // Extract public_id from Cloudinary URL
+        // Example URL: https://res.cloudinary.com/dxxxxxxxx/image/upload/v123456/agent-images/agent-123456789.jpg
+        const urlParts = existingAgent.imageUrl.split('/');
+        const publicIdWithExt = urlParts[urlParts.length - 1]; // agent-123456789.jpg
+        const publicIdWithoutExt = publicIdWithExt.split('.')[0]; // agent-123456789
+        const fullPublicId = `agent-images/${publicIdWithoutExt}`; // agent-images/agent-123456789
+
+        await cloudinary.uploader.destroy(fullPublicId);
+        console.log(`✅ Deleted old Cloudinary image: ${fullPublicId}`);
+      } catch (deleteError) {
+        console.error("⚠️ Error deleting old Cloudinary image:", deleteError.message);
+        // Continue with update even if deletion fails
       }
     }
 
-    // 8️⃣ Update agent in database
-    console.log("💾 [UPDATE-AGENT] Updating agent in database...");
-    
     const updatedAgent = await Agent.findOneAndUpdate(
       { agentId },
       { $set: updateFields },
       { new: true, runValidators: true }
     );
 
-    if (!updatedAgent) {
-      return res.status(404).json({
-        success: false,
-        error: "Agent not found after update attempt"
-      });
-    }
-
-    console.log("✅ [UPDATE-AGENT] Agent updated successfully");
-
-    // 9️⃣ Return success response
     return res.status(200).json({
       success: true,
       message: `Agent updated successfully. Updated fields: ${effectiveKeys.join(", ")}`,
       data: updatedAgent,
-      imageUrl: updatedAgent.imageUrl // Return the new Cloudinary URL
+      imageUrl: updatedAgent.imageUrl // ✅ Return Cloudinary URL
     });
 
   } catch (err) {
-    // ✅ FIXED: Comprehensive error logging
-    console.error("❌ [UPDATE-AGENT] Fatal error:", {
-      message: err.message,
-      name: err.name,
-      code: err.code,
-      stack: err.stack
-    });
+    console.error("Update agent error:", err);
 
-    // Handle duplicate key errors
     if (err?.code === 11000) {
       const field = Object.keys(err.keyPattern || {})[0];
       const value = err.keyValue?.[field];
@@ -461,35 +385,12 @@ const updateAgent = async (req, res) => {
       });
     }
 
-    // Handle validation errors
-    if (err.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        error: err.message || "Validation failed"
-      });
-    }
-
-    // Handle Cloudinary errors
-    if (err.message && err.message.toLowerCase().includes('cloudinary')) {
-      return res.status(500).json({
-        success: false,
-        error: "Image upload service error",
-        details: err.message
-      });
-    }
-
-    // Generic error response
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
-      error: err.message || "Failed to update agent",
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+      error: err.message || "Failed to update agent"
     });
   }
 };
-
-// ===== REQUIRED HELPER FUNCTIONS =====
-// Make sure these are defined in your AgentController.js
-
 
 const getAgentsBySequence = async (req, res) => {
   try {

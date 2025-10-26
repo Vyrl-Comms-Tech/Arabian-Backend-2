@@ -226,6 +226,7 @@ router.post(
 
 // Get all agents (with pagination, sorting, etc.)
 router.get("/Allagents", AgentController.getAgents);
+// router.get("/AllLeaderboardAgents", AgentController.getAgentsForLeaderboard);
 router.get("/SequenceAgent", AgentController.getAgentsBySequence);
 
 router.get("/Agent", AgentController.getAgentById);

@@ -72,7 +72,7 @@ module.exports.cloudinary = cloudinary;
 
 
 // Agents with salesforce sync cron job
-// setupCronJobs();
+setupCronJobs();
 
 // Then mount your API routes
 app.use("/", router);
