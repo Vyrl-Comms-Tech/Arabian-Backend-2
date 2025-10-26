@@ -454,7 +454,7 @@ async function getSalesforceToken() {
   }
 }
 
-async function syncDealsJob(month = "this_month") {
+async function syncDealsJob(month = "this_year") {
   try {
     month = ensureValidMonth(month);
     console.log(`🔄 [CRON] Starting Salesforce deals sync for: ${month}`);
@@ -518,7 +518,7 @@ async function syncDealsJob(month = "this_month") {
   }
 }
 
-async function syncViewingsJob(month = "this_month") {
+async function syncViewingsJob(month = "this_year") {
   try {
     month = ensureValidMonth(month);
     console.log(`🔄 [CRON] Starting Salesforce viewings sync for: ${month}`);
@@ -562,7 +562,7 @@ async function syncViewingsJob(month = "this_month") {
   }
 }
 
-async function syncOffersJob(month = "this_month") {
+async function syncOffersJob(month = "this_year") {
   try {
     month = ensureValidMonth(month);
     console.log(`🔄 [CRON] Starting Salesforce offers sync for: ${month}`);
