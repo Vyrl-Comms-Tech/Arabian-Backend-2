@@ -166,12 +166,14 @@ const createAgent = async (req, res) => {
 // Get agents
 // -----------------------------
 const getAgents = async (_req, res) => {
+  console.log("Getting Agents")
   try {
     const agents = await Agent.find().sort({ sequenceNumber: 1, agentName: 1 });
     return res.status(200).json({ success: true, data: agents });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
+
 };
 
 const getAgentById = async (req, res) => {
