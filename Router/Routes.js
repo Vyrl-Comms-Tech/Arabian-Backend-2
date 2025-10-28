@@ -93,7 +93,6 @@ const upload = multer({
   fileFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
 });
-
 // Hero Content
 router.get("/get-hero", HeroController.getHero);
 router.post(
