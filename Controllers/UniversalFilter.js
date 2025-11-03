@@ -7,7 +7,6 @@ const Property = require("../Models/PropertyModel");
 //   getCacheTTL,
 // } = require('../Config/cacheUtils');
 
-
 // const UniversalSpecializedFilter = async (req, res) => {
 //   try {
 //     console.log("Working - Universal Filter with Redis Caching");
@@ -254,7 +253,7 @@ const Property = require("../Models/PropertyModel");
 //     }
 
 //     let PropertyModel = Property;
-    
+
 //     // Get total count for pagination
 //     const totalCount = await PropertyModel.countDocuments(query);
 //     const totalPages = Math.ceil(totalCount / limit);
@@ -360,276 +359,817 @@ const Property = require("../Models/PropertyModel");
 //   }
 // };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // Main Working function
+
+// const UniversalSpecializedFilter = async (req, res) => {
+//   try {
+//     console.log("Working");
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip = (page - 1) * limit;
+
+//     // Get listing types - can be comma-separated for multiple types
+//     const listingTypeParam = req.query.listingType || "Sale";
+//     const listingTypes = listingTypeParam.split(",").map((type) => type.trim());
+
+//     // Get sort parameter
+//     const sortBy = req.query.sortBy || "newest";
+
+//     console.log("Universal Filter - Listing Types:", listingTypes);
+//     console.log("Universal Filter - Sort By:", sortBy);
+//     // console.log("Query",req.query)
+//     // Build base query
+//     let query = {};
+
+//     // Add listing type filter
+//     if (listingTypes.length === 1) {
+//       query.listing_type = listingTypes[0];
+//     } else {
+//       query.listing_type = { $in: listingTypes };
+//     }
+
+//     // Add other filters
+//     if (req.query.propertyType && req.query.propertyType !== "") {
+//       if (req.query.propertyType.toLowerCase() === "studio") {
+//         query.property_type = new RegExp("^studio$", "i"); // Exact match only
+//       } else {
+//         query.property_type = new RegExp(req.query.propertyType, "i");
+//       }
+//     }
+
+//     if (req.query.minPrice) {
+//       query["general_listing_information.listingprice"] = {
+//         ...query["general_listing_information.listingprice"],
+//         $gte: parseInt(req.query.minPrice),
+//       };
+//     }
+
+//     if (req.query.maxPrice) {
+//       query["general_listing_information.listingprice"] = {
+//         ...query["general_listing_information.listingprice"],
+//         $lte: parseInt(req.query.maxPrice),
+//       };
+//     }
+
+//     if (req.query.bedrooms && req.query.bedrooms !== "") {
+//       if (req.query.bedrooms.toLowerCase() === "studio") {
+//         query["general_listing_information.bedrooms"] = new RegExp(
+//           "studio",
+//           "i"
+//         );
+//       } else if (req.query.bedrooms === "5+") {
+//         query["general_listing_information.bedrooms"] = {
+//           $regex: /^[5-9]\d*$|^[1-9]\d{1,}$/,
+//         };
+//       } else {
+//         query["general_listing_information.bedrooms"] = req.query.bedrooms;
+//       }
+//     }
+
+//     if (req.query.address && req.query.address !== "") {
+//       query["custom_fields.pba__addresstext_pb"] = new RegExp(
+//         req.query.address,
+//         "i"
+//       );
+//     }
+
+//     if (req.query.developer && req.query.developer !== "") {
+//       query["custom_fields.developer"] = new RegExp(req.query.developer, "i");
+//     }
+
+//     if (req.query.bathrooms && req.query.bathrooms !== "") {
+//       query["general_listing_information.fullbathrooms"] = req.query.bathrooms;
+//     }
+
+//     if (req.query.furnishing && req.query.furnishing !== "") {
+//       query["custom_fields.furnished"] = new RegExp(req.query.furnishing, "i");
+//     }
+
+//     if (req.query.minSize) {
+//       query["general_listing_information.totalarea"] = {
+//         ...query["general_listing_information.totalarea"],
+//         $gte: parseInt(req.query.minSize),
+//       };
+//     }
+
+//     if (req.query.maxSize) {
+//       query["general_listing_information.totalarea"] = {
+//         ...query["general_listing_information.totalarea"],
+//         $lte: parseInt(req.query.maxSize),
+//       };
+//     }
+
+//     if (req.query.amenities) {
+//       const amenitiesArray = req.query.amenities
+//         .split(",")
+//         .map((a) => a.trim());
+//       const amenityRegexArray = amenitiesArray.map(
+//         (amenity) => new RegExp(amenity, "i")
+//       );
+//       query["custom_fields.private_amenities"] = { $in: amenityRegexArray };
+//     }
+
+//     console.log("Universal Filter - Query:", JSON.stringify(query, null, 2));
+
+//     // Define sort options and aggregation pipeline
+//     let sortOptions = {};
+//     let useAggregation = false;
+//     let aggregationPipeline = [];
+
+//     switch (sortBy.toLowerCase()) {
+//       case "most_recent":
+//       case "newest":
+//         sortOptions = { createdAt: -1 };
+//         break;
+
+//       case "highest_price":
+//       case "price-high":
+//         useAggregation = true;
+//         aggregationPipeline = [
+//           { $match: query },
+//           {
+//             $addFields: {
+//               numericPrice: {
+//                 $convert: {
+//                   input: "$general_listing_information.listingprice",
+//                   to: "double",
+//                   onError: 0,
+//                   onNull: 0,
+//                 },
+//               },
+//             },
+//           },
+//           { $sort: { numericPrice: -1 } }, // -1 for descending (highest first)
+//           { $skip: skip },
+//           { $limit: limit },
+//         ];
+//         break;
+
+//       case "lowest_price":
+//       case "price-low":
+//         useAggregation = true;
+//         aggregationPipeline = [
+//           { $match: query },
+//           {
+//             $addFields: {
+//               numericPrice: {
+//                 $convert: {
+//                   input: "$general_listing_information.listingprice",
+//                   to: "double",
+//                   onError: 0,
+//                   onNull: 0,
+//                 },
+//               },
+//             },
+//           },
+//           { $sort: { numericPrice: 1 } }, // 1 for ascending (lowest first)
+//           { $skip: skip },
+//           { $limit: limit },
+//         ];
+//         break;
+
+//       case "most_bedrooms":
+//         useAggregation = true;
+//         aggregationPipeline = [
+//           { $match: query },
+//           {
+//             $addFields: {
+//               numericBedrooms: {
+//                 $cond: {
+//                   if: {
+//                     $eq: ["$general_listing_information.bedrooms", "Studio"],
+//                   },
+//                   then: 0,
+//                   else: {
+//                     $convert: {
+//                       input: "$general_listing_information.bedrooms",
+//                       to: "int",
+//                       onError: 0,
+//                       onNull: 0,
+//                     },
+//                   },
+//                 },
+//               },
+//             },
+//           },
+//           { $sort: { numericBedrooms: -1 } },
+//           { $skip: skip },
+//           { $limit: limit },
+//         ];
+//         break;
+
+//       case "least_bedrooms":
+//         useAggregation = true;
+//         aggregationPipeline = [
+//           { $match: query },
+//           {
+//             $addFields: {
+//               numericBedrooms: {
+//                 $cond: {
+//                   if: {
+//                     $eq: ["$general_listing_information.bedrooms", "Studio"],
+//                   },
+//                   then: 0,
+//                   else: {
+//                     $convert: {
+//                       input: "$general_listing_information.bedrooms",
+//                       to: "int",
+//                       onError: 0,
+//                       onNull: 0,
+//                     },
+//                   },
+//                 },
+//               },
+//             },
+//           },
+//           { $sort: { numericBedrooms: 1 } },
+//           { $skip: skip },
+//           { $limit: limit },
+//         ];
+//         break;
+
+//       default:
+//         sortOptions = { createdAt: -1 };
+//         break;
+//     }
+//     let PropertyModel = Property;
+//     // Get total count for pagination
+//     const totalCount = await PropertyModel.countDocuments(query);
+//     const totalPages = Math.ceil(totalCount / limit);
+
+//     // Execute query with or without aggregation
+//     let properties = [];
+//     if (useAggregation) {
+//       console.log("Universal Filter - Using aggregation pipeline");
+//       properties = await PropertyModel.aggregate(aggregationPipeline);
+//     } else {
+//       console.log(
+//         "Universal Filter - Using standard query with sort:",
+//         sortOptions
+//       );
+//       properties = await PropertyModel.find(query)
+//         .sort(sortOptions)
+//         .skip(skip)
+//         .limit(limit)
+//         .lean();
+//     }
+
+//     // Generate sort description
+//     const sortDescriptions = {
+//       most_recent: "most recent first",
+//       newest: "newest first",
+//       highest_price: "highest price first",
+//       "price-high": "highest price first",
+//       lowest_price: "lowest price first",
+//       "price-low": "lowest price first",
+//       most_bedrooms: "most bedrooms first",
+//       least_bedrooms: "least bedrooms first",
+//       largest_area: "largest area first",
+//       smallest_area: "smallest area first",
+//       oldest: "oldest first",
+//       popular: "most popular first",
+//     };
+
+//     const sortDescription =
+//       sortDescriptions[sortBy.toLowerCase()] || "most recent first";
+
+//     // Success response
+//     res.status(200).json({
+//       success: true,
+//       message: `Found ${properties.length} properties (${listingTypes.join(
+//         ", "
+//       )}) - sorted by ${sortDescription}`,
+//       pagination: {
+//         currentPage: page,
+//         totalPages: totalPages,
+//         totalCount: totalCount,
+//         limit: limit,
+//         hasNextPage: page < totalPages,
+//         hasPrevPage: page > 1,
+//       },
+//       filters: {
+//         listingTypes: listingTypes,
+//         propertyType: req.query.propertyType || null,
+//         priceRange: {
+//           min: req.query.minPrice || null,
+//           max: req.query.maxPrice || null,
+//         },
+//         bedrooms: req.query.bedrooms || null,
+//         address: req.query.address || null,
+//         developer: req.query.developer || null,
+//         sortBy: sortBy,
+//         sortDescription: sortDescription,
+//       },
+//       count: properties.length,
+//       data: properties,
+//     });
+//   } catch (error) {
+//     console.error("Error in Universal Filter:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to filter and sort properties",
+//       error: error.message,
+//       pagination: {
+//         currentPage: 1,
+//         totalPages: 0,
+//         totalCount: 0,
+//         limit: parseInt(req.query.limit) || 10,
+//         hasNextPage: false,
+//         hasPrevPage: false,
+//       },
+//       data: [],
+//     });
+//   }
+// };
+
+// const UniversalSpecializedFilter = async (req, res) => {
+//   try {
+//     const page  = parseInt(req.query.page)  || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const skip  = (page - 1) * limit;
+
+//     // listing types
+//     const listingTypeParam = req.query.listingType || "Sale";
+//     const listingTypes = listingTypeParam.split(",").map(t => t.trim());
+
+//     // other filters (same as before, but DO NOT put price range into the base $match)
+//     const sortBy = (req.query.sortBy || "newest").toLowerCase();
+//     const minPrice = req.query.minPrice ? parseInt(req.query.minPrice, 10) : null;
+//     const maxPrice = req.query.maxPrice ? parseInt(req.query.maxPrice, 10) : null;
+
+//     // ---- base match (string/regex friendly fields only) ----
+//     const baseMatch = {};
+
+//     if (listingTypes.length === 1) {
+//       baseMatch.listing_type = listingTypes[0];
+//     } else {
+//       baseMatch.listing_type = { $in: listingTypes };
+//     }
+
+//     // propertyType (keep your studio exact-match logic)
+//     if (req.query.propertyType && req.query.propertyType !== "") {
+//       if (req.query.propertyType.toLowerCase() === "studio") {
+//         baseMatch.property_type = new RegExp("^studio$", "i");
+//       } else {
+//         baseMatch.property_type = new RegExp(req.query.propertyType, "i");
+//       }
+//     }
+
+//     if (req.query.bedrooms && req.query.bedrooms !== "") {
+//       if (req.query.bedrooms.toLowerCase() === "studio") {
+//         baseMatch["general_listing_information.bedrooms"] = /studio/i;
+//       } else if (req.query.bedrooms === "5+") {
+//         baseMatch["general_listing_information.bedrooms"] = { $regex: /^[5-9]\d*$|^[1-9]\d{1,}$/ };
+//       } else {
+//         baseMatch["general_listing_information.bedrooms"] = req.query.bedrooms;
+//       }
+//     }
+
+//     if (req.query.address && req.query.address !== "") {
+//       baseMatch["custom_fields.pba__addresstext_pb"] = new RegExp(req.query.address, "i");
+//     }
+
+//     if (req.query.developer && req.query.developer !== "") {
+//       baseMatch["custom_fields.developer"] = new RegExp(req.query.developer, "i");
+//     }
+
+//     if (req.query.bathrooms && req.query.bathrooms !== "") {
+//       baseMatch["general_listing_information.fullbathrooms"] = req.query.bathrooms;
+//     }
+
+//     if (req.query.furnishing && req.query.furnishing !== "") {
+//       baseMatch["custom_fields.furnished"] = new RegExp(req.query.furnishing, "i");
+//     }
+
+//     if (req.query.minSize) {
+//       baseMatch["general_listing_information.totalarea"] = {
+//         ...(baseMatch["general_listing_information.totalarea"] || {}),
+//         $gte: parseInt(req.query.minSize, 10),
+//       };
+//     }
+
+//     if (req.query.maxSize) {
+//       baseMatch["general_listing_information.totalarea"] = {
+//         ...(baseMatch["general_listing_information.totalarea"] || {}),
+//         $lte: parseInt(req.query.maxSize, 10),
+//       };
+//     }
+
+//     if (req.query.amenities) {
+//       const amenitiesArray = req.query.amenities.split(",").map(a => a.trim());
+//       const amenityRegexArray = amenitiesArray.map(a => new RegExp(a, "i"));
+//       baseMatch["custom_fields.private_amenities"] = { $in: amenityRegexArray };
+//     }
+
+//     // ---- pipeline ----
+//     // We’ll always use aggregation to keep behavior consistent.
+//     const pipeline = [
+//       { $match: baseMatch },
+
+//       // Add numericPrice only once; clean commas/currency and cast to double
+//       {
+//         $addFields: {
+//           numericPrice: {
+//             $convert: {
+//               input: {
+//                 $replaceAll: {
+//                   input: {
+//                     $replaceAll: {
+//                       input: {
+//                         $trim: {
+//                           input: { $toString: "$general_listing_information.listingprice" }
+//                         }
+//                       },
+//                       find: ",",
+//                       replacement: ""
+//                     }
+//                   },
+//                   find: "AED",
+//                   replacement: ""
+//                 }
+//               },
+//               to: "double",
+//               onError: 0,
+//               onNull: 0
+//             }
+//           }
+//         }
+//       },
+
+//       // numericBedrooms for bedroom sorts; Studio => 0
+//       {
+//         $addFields: {
+//           numericBedrooms: {
+//             $cond: [
+//               { $eq: ["$general_listing_information.bedrooms", "Studio"] },
+//               0,
+//               {
+//                 $convert: {
+//                   input: "$general_listing_information.bedrooms",
+//                   to: "int",
+//                   onError: 0,
+//                   onNull: 0
+//                 }
+//               }
+//             ]
+//           }
+//         }
+//       }
+//     ];
+
+//     // Apply price range AFTER conversion
+//     const priceMatch = {};
+//     if (minPrice !== null) priceMatch.numericPrice = { ...(priceMatch.numericPrice || {}), $gte: minPrice };
+//     if (maxPrice !== null) priceMatch.numericPrice = { ...(priceMatch.numericPrice || {}), $lte: maxPrice };
+//     if (Object.keys(priceMatch).length > 0) pipeline.push({ $match: priceMatch });
+
+//     // Sorting
+//     let sortStage = { createdAt: -1 };
+//     switch (sortBy) {
+//       case "highest_price":
+//       case "price-high":
+//         sortStage = { numericPrice: -1 };
+//         break;
+//       case "lowest_price":
+//       case "price-low":
+//         sortStage = { numericPrice: 1 };
+//         break;
+//       case "most_bedrooms":
+//         sortStage = { numericBedrooms: -1 };
+//         break;
+//       case "least_bedrooms":
+//         sortStage = { numericBedrooms: 1 };
+//         break;
+//       case "newest":
+//       case "most_recent":
+//       default:
+//         sortStage = { createdAt: -1 };
+//         break;
+//     }
+
+//     // Use $facet to get total and paginated docs consistently
+//     pipeline.push(
+//       { $sort: sortStage },
+//       {
+//         $facet: {
+//           docs: [{ $skip: skip }, { $limit: limit }],
+//           total: [{ $count: "count" }]
+//         }
+//       }
+//     );
+
+//     // Pick your model (you used Property earlier)
+//     const PropertyModel = Property;
+
+//     const aggResult = await PropertyModel.aggregate(pipeline);
+//     const docs = aggResult?.[0]?.docs || [];
+//     const totalCount = aggResult?.[0]?.total?.[0]?.count || 0;
+//     const totalPages = Math.ceil(totalCount / limit) || 1;
+
+//     const sortDescriptions = {
+//       most_recent: "most recent first",
+//       newest: "newest first",
+//       highest_price: "highest price first",
+//       "price-high": "highest price first",
+//       lowest_price: "lowest price first",
+//       "price-low": "lowest price first",
+//       most_bedrooms: "most bedrooms first",
+//       least_bedrooms: "least bedrooms first",
+//     };
+//     const sortDescription = sortDescriptions[sortBy] || "most recent first";
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Found ${docs.length} properties (${listingTypes.join(", ")}) - sorted by ${sortDescription}`,
+//       pagination: {
+//         currentPage: page,
+//         totalPages,
+//         totalCount,
+//         limit,
+//         hasNextPage: page < totalPages,
+//         hasPrevPage: page > 1,
+//       },
+//       filters: {
+//         listingTypes,
+//         propertyType: req.query.propertyType || null,
+//         priceRange: { min: minPrice, max: maxPrice },
+//         bedrooms: req.query.bedrooms || null,
+//         address: req.query.address || null,
+//         developer: req.query.developer || null,
+//         sortBy,
+//         sortDescription,
+//       },
+//       count: docs.length,
+//       data: docs,
+//     });
+//   } catch (error) {
+//     console.error("Error in Universal Filter:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to filter and sort properties",
+//       error: error.message,
+//       pagination: {
+//         currentPage: 1,
+//         totalPages: 0,
+//         totalCount: 0,
+//         limit: parseInt(req.query.limit) || 10,
+//         hasNextPage: false,
+//         hasPrevPage: false,
+//       },
+//       data: [],
+//     });
+//   }
+// };
+
+function toAmenitySlugs(q) {
+  if (!q) return [];
+  return q.split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(label => labelToSlug[label] || label.toLowerCase().replace(/\s+/g,"-"));
+}
+const labelToSlug = {
+  "Central A/C": "central-a/c",      // adjust if your data uses e.g. "central-ac"
+  "Balcony": "balcony",
+  "Water View": "view-of-water",
+  "Private Pool": "private-pool",
+  "Beach Access": "beach-access",
+  "Gym": "shared-gym",               // or "gym" depending on your feed
+  "Shared Spa": "shared-spa",
+  "Parking": "covered-parking",      // adjust if needed
+  "Security": "security",
+  "Garden": "garden",
+  "Elevator": "elevator",
+  "Maid Room": "maids-room",
+  "Study Room": "study-room",
+  "Storage": "storage",
+  "Built-in Wardrobes": "built-in-wardrobes",
+  "Kitchen Appliances": "kitchen-appliances",
+};
+
+
+function furnishingToBool(f) {
+  if (!f) return null;
+  const v = f.toLowerCase();
+  if (v === "furnished") return true;
+  if (v === "unfurnished") return false;
+  return null;
+}
 const UniversalSpecializedFilter = async (req, res) => {
   try {
-    console.log("Working")
-    const page = parseInt(req.query.page) || 1;
+    const page  = parseInt(req.query.page)  || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
-    // Get listing types - can be comma-separated for multiple types
     const listingTypeParam = req.query.listingType || "Sale";
-    const listingTypes = listingTypeParam.split(",").map((type) => type.trim());
+    const listingTypes = listingTypeParam.split(",").map(t => t.trim());
+    const sortBy = (req.query.sortBy || "newest").toLowerCase();
 
-    // Get sort parameter
-    const sortBy = req.query.sortBy || "newest";
+    const minPrice = req.query.minPrice ? parseInt(req.query.minPrice, 10) : null;
+    const maxPrice = req.query.maxPrice ? parseInt(req.query.maxPrice, 10) : null;
 
-    console.log("Universal Filter - Listing Types:", listingTypes);
-    console.log("Universal Filter - Sort By:", sortBy);
+    const minSize = req.query.minSize ? parseInt(req.query.minSize, 10) : null;
+    const maxSize = req.query.maxSize ? parseInt(req.query.maxSize, 10) : null;
 
-    // Build base query
-    let query = {};
+    const amenitySlugs = toAmenitySlugs(req.query.amenities);
+    const furnishedBool = furnishingToBool(req.query.furnishing);
 
-    // Add listing type filter
-    if (listingTypes.length === 1) {
-      query.listing_type = listingTypes[0];
-    } else {
-      query.listing_type = { $in: listingTypes };
-    }
+    // -------- base (string/regex) filters only ----------
+    const baseMatch = {};
+    baseMatch.listing_type = listingTypes.length === 1 ? listingTypes[0] : { $in: listingTypes };
 
-    // Add other filters
     if (req.query.propertyType && req.query.propertyType !== "") {
-      query.property_type = new RegExp(req.query.propertyType, "i");
-    }
-
-    if (req.query.minPrice) {
-      query["general_listing_information.listingprice"] = {
-        ...query["general_listing_information.listingprice"],
-        $gte: parseInt(req.query.minPrice),
-      };
-    }
-
-    if (req.query.maxPrice) {
-      query["general_listing_information.listingprice"] = {
-        ...query["general_listing_information.listingprice"],
-        $lte: parseInt(req.query.maxPrice),
-      };
+      baseMatch.property_type =
+        req.query.propertyType.toLowerCase() === "studio"
+          ? /^studio$/i
+          : new RegExp(req.query.propertyType, "i");
     }
 
     if (req.query.bedrooms && req.query.bedrooms !== "") {
       if (req.query.bedrooms.toLowerCase() === "studio") {
-        query["general_listing_information.bedrooms"] = new RegExp(
-          "studio",
-          "i"
-        );
+        baseMatch["general_listing_information.bedrooms"] = /studio/i;
       } else if (req.query.bedrooms === "5+") {
-        query["general_listing_information.bedrooms"] = {
-          $regex: /^[5-9]\d*$|^[1-9]\d{1,}$/,
-        };
+        baseMatch["general_listing_information.bedrooms"] = { $regex: /^[5-9]\d*$|^[1-9]\d{1,}$/ };
       } else {
-        query["general_listing_information.bedrooms"] = req.query.bedrooms;
+        baseMatch["general_listing_information.bedrooms"] = req.query.bedrooms;
       }
     }
 
-    if (req.query.address && req.query.address !== "") {
-      query["custom_fields.pba__addresstext_pb"] = new RegExp(
-        req.query.address,
-        "i"
-      );
+    if (req.query.address) {
+      baseMatch["custom_fields.pba__addresstext_pb"] = new RegExp(req.query.address, "i");
     }
 
-    if (req.query.developer && req.query.developer !== "") {
-      query["custom_fields.developer"] = new RegExp(req.query.developer, "i");
+    if (req.query.developer) {
+      baseMatch["custom_fields.developer"] = new RegExp(req.query.developer, "i");
     }
 
-    if (req.query.bathrooms && req.query.bathrooms !== "") {
-      query["general_listing_information.fullbathrooms"] = req.query.bathrooms;
+    if (req.query.bathrooms) {
+      baseMatch["general_listing_information.fullbathrooms"] = req.query.bathrooms;
     }
 
-    if (req.query.furnishing && req.query.furnishing !== "") {
-      query["custom_fields.furnished"] = new RegExp(req.query.furnishing, "i");
+    // -------- pipeline ----------
+    const pipeline = [
+      { $match: baseMatch },
+
+      // Numeric price (strip commas/currency -> double)
+      {
+        $addFields: {
+          numericPrice: {
+            $convert: {
+              input: {
+                $replaceAll: {
+                  input: {
+                    $replaceAll: {
+                      input: { $toString: "$general_listing_information.listingprice" },
+                      find: ",",
+                      replacement: ""
+                    }
+                  },
+                  find: "AED",
+                  replacement: ""
+                }
+              },
+              to: "double", onError: 0, onNull: 0
+            }
+          }
+        }
+      },
+
+      // Numeric area: prefer general_listing_information.totalarea, fallback to plot_size/plot_area
+      {
+        $addFields: {
+          _areaRaw: {
+            $ifNull: [
+              "$general_listing_information.totalarea",
+              { $ifNull: [ "$custom_fields.plot_size", "$custom_fields.plot_area" ] }
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          numericArea: {
+            $convert: {
+              input: {
+                $replaceAll: { input: { $toString: "$_areaRaw" }, find: ",", replacement: "" }
+              },
+              to: "double", onError: 0, onNull: 0
+            }
+          }
+        }
+      },
+
+      // Furnishing normalization to boolean
+      {
+        $addFields: {
+          _furnLower: { $toLower: { $ifNull: ["$custom_fields.furnished", ""] } },
+          isFurnished: {
+            $cond: [
+              { $in: [{ $toLower: { $ifNull: ["$custom_fields.furnished",""] } }, ["yes","furnished","true"]] },
+              true,
+              {
+                $cond: [
+                  { $in: [{ $toLower: { $ifNull: ["$custom_fields.furnished",""] } }, ["no","unfurnished","false"]] },
+                  false,
+                  null
+                ]
+              }
+            ]
+          }
+        }
+      },
+
+      // Amenities -> array
+      {
+        $addFields: {
+          amenitiesArr: {
+            $filter: {
+              input: {
+                $map: {
+                  input: { $split: [{ $ifNull: ["$custom_fields.private_amenities",""] }, ","] },
+                  as: "a",
+                  in: { $trim: { input: "$$a" } }
+                }
+              },
+              as: "x",
+              cond: { $ne: ["$$x", ""] }
+            }
+          }
+        }
+      },
+
+      // Bedrooms numeric for sort
+      {
+        $addFields: {
+          numericBedrooms: {
+            $cond: [
+              { $eq: ["$general_listing_information.bedrooms", "Studio"] },
+              0,
+              {
+                $convert: {
+                  input: "$general_listing_information.bedrooms",
+                  to: "int",
+                  onError: 0, onNull: 0
+                }
+              }
+            ]
+          }
+        }
+      }
+    ];
+
+    // Price range after conversion
+    const priceMatch = {};
+    if (minPrice !== null) priceMatch.numericPrice = { ...(priceMatch.numericPrice || {}), $gte: minPrice };
+    if (maxPrice !== null) priceMatch.numericPrice = { ...(priceMatch.numericPrice || {}), $lte: maxPrice };
+    if (Object.keys(priceMatch).length) pipeline.push({ $match: priceMatch });
+
+    // Size range after conversion
+    const sizeMatch = {};
+    if (minSize !== null) sizeMatch.numericArea = { ...(sizeMatch.numericArea || {}), $gte: minSize };
+    if (maxSize !== null) sizeMatch.numericArea = { ...(sizeMatch.numericArea || {}), $lte: maxSize };
+    if (Object.keys(sizeMatch).length) pipeline.push({ $match: sizeMatch });
+
+    // Furnishing match
+    if (furnishedBool !== null) {
+      pipeline.push({ $match: { isFurnished: furnishedBool } });
     }
 
-    if (req.query.minSize) {
-      query["general_listing_information.totalarea"] = {
-        ...query["general_listing_information.totalarea"],
-        $gte: parseInt(req.query.minSize),
-      };
+    // Amenities match (require ALL selected; switch to $in for ANY)
+    if (amenitySlugs.length) {
+      const amenityRegexes = amenitySlugs.map(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"));
+      pipeline.push({ $match: { amenitiesArr: { $all: amenityRegexes } } });
     }
 
-    if (req.query.maxSize) {
-      query["general_listing_information.totalarea"] = {
-        ...query["general_listing_information.totalarea"],
-        $lte: parseInt(req.query.maxSize),
-      };
-    }
-
-    if (req.query.amenities) {
-      const amenitiesArray = req.query.amenities
-        .split(",")
-        .map((a) => a.trim());
-      const amenityRegexArray = amenitiesArray.map(
-        (amenity) => new RegExp(amenity, "i")
-      );
-      query["custom_fields.private_amenities"] = { $in: amenityRegexArray };
-    }
-
-    console.log("Universal Filter - Query:", JSON.stringify(query, null, 2));
-
-    // Define sort options and aggregation pipeline
-    let sortOptions = {};
-    let useAggregation = false;
-    let aggregationPipeline = [];
-
-    switch (sortBy.toLowerCase()) {
-      case "most_recent":
-      case "newest":
-        sortOptions = { createdAt: -1 };
-        break;
-
+    // Sorting
+    let sortStage = { createdAt: -1 };
+    switch (sortBy) {
       case "highest_price":
-      case "price-high":
-        useAggregation = true;
-        aggregationPipeline = [
-          { $match: query },
-          {
-            $addFields: {
-              numericPrice: {
-                $convert: {
-                  input: "$general_listing_information.listingprice",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-            },
-          },
-          { $sort: { numericPrice: -1 } }, // -1 for descending (highest first)
-          { $skip: skip },
-          { $limit: limit },
-        ];
-        break;
-
+      case "price-high": sortStage = { numericPrice: -1 }; break;
       case "lowest_price":
-      case "price-low":
-        useAggregation = true;
-        aggregationPipeline = [
-          { $match: query },
-          {
-            $addFields: {
-              numericPrice: {
-                $convert: {
-                  input: "$general_listing_information.listingprice",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-            },
-          },
-          { $sort: { numericPrice: 1 } }, // 1 for ascending (lowest first)
-          { $skip: skip },
-          { $limit: limit },
-        ];
-        break;
-
-      case "most_bedrooms":
-        useAggregation = true;
-        aggregationPipeline = [
-          { $match: query },
-          {
-            $addFields: {
-              numericBedrooms: {
-                $cond: {
-                  if: {
-                    $eq: ["$general_listing_information.bedrooms", "Studio"],
-                  },
-                  then: 0,
-                  else: {
-                    $convert: {
-                      input: "$general_listing_information.bedrooms",
-                      to: "int",
-                      onError: 0,
-                      onNull: 0,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          { $sort: { numericBedrooms: -1 } },
-          { $skip: skip },
-          { $limit: limit },
-        ];
-        break;
-
-      case "least_bedrooms":
-        useAggregation = true;
-        aggregationPipeline = [
-          { $match: query },
-          {
-            $addFields: {
-              numericBedrooms: {
-                $cond: {
-                  if: {
-                    $eq: ["$general_listing_information.bedrooms", "Studio"],
-                  },
-                  then: 0,
-                  else: {
-                    $convert: {
-                      input: "$general_listing_information.bedrooms",
-                      to: "int",
-                      onError: 0,
-                      onNull: 0,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          { $sort: { numericBedrooms: 1 } },
-          { $skip: skip },
-          { $limit: limit },
-        ];
-        break;
-
-      default:
-        sortOptions = { createdAt: -1 };
-        break;
-    }
-    let PropertyModel = Property;
-    // Get total count for pagination
-    const totalCount = await PropertyModel.countDocuments(query);
-    const totalPages = Math.ceil(totalCount / limit);
-
-    // Execute query with or without aggregation
-    let properties = [];
-    if (useAggregation) {
-      console.log("Universal Filter - Using aggregation pipeline");
-      properties = await PropertyModel.aggregate(aggregationPipeline);
-    } else {
-      console.log(
-        "Universal Filter - Using standard query with sort:",
-        sortOptions
-      );
-      properties = await PropertyModel.find(query)
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limit)
-        .lean();
+      case "price-low":  sortStage = { numericPrice: 1  }; break;
+      case "most_bedrooms":  sortStage = { numericBedrooms: -1 }; break;
+      case "least_bedrooms": sortStage = { numericBedrooms: 1  }; break;
+      case "newest":
+      case "most_recent":
+      default: sortStage = { createdAt: -1 };
     }
 
-    // Generate sort description
+    pipeline.push(
+      { $sort: sortStage },
+      { $facet: {
+          docs:  [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: "count" }]
+        }
+      }
+    );
+
+    const PropertyModel = Property;
+    const agg = await PropertyModel.aggregate(pipeline);
+    const docs = agg?.[0]?.docs || [];
+    const totalCount = agg?.[0]?.total?.[0]?.count || 0;
+    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
     const sortDescriptions = {
       most_recent: "most recent first",
       newest: "newest first",
@@ -639,67 +1179,47 @@ const UniversalSpecializedFilter = async (req, res) => {
       "price-low": "lowest price first",
       most_bedrooms: "most bedrooms first",
       least_bedrooms: "least bedrooms first",
-      largest_area: "largest area first",
-      smallest_area: "smallest area first",
-      oldest: "oldest first",
-      popular: "most popular first",
     };
 
-    const sortDescription =
-      sortDescriptions[sortBy.toLowerCase()] || "most recent first";
-
-    // Success response
     res.status(200).json({
       success: true,
-      message: `Found ${properties.length} properties (${listingTypes.join(
-        ", "
-      )}) - sorted by ${sortDescription}`,
+      message: `Found ${docs.length} properties (${listingTypes.join(", ")}) - sorted by ${sortDescriptions[sortBy] || "most recent first"}`,
       pagination: {
         currentPage: page,
-        totalPages: totalPages,
-        totalCount: totalCount,
-        limit: limit,
+        totalPages,
+        totalCount,
+        limit,
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1,
       },
       filters: {
-        listingTypes: listingTypes,
+        listingTypes,
         propertyType: req.query.propertyType || null,
-        priceRange: {
-          min: req.query.minPrice || null,
-          max: req.query.maxPrice || null,
-        },
+        priceRange: { min: minPrice, max: maxPrice },
+        sizeRange: { min: minSize, max: maxSize },
+        furnishing: req.query.furnishing || null,
+        amenities: amenitySlugs,
         bedrooms: req.query.bedrooms || null,
         address: req.query.address || null,
         developer: req.query.developer || null,
-        sortBy: sortBy,
-        sortDescription: sortDescription,
+        sortBy,
+        sortDescription: sortDescriptions[sortBy] || "most recent first",
       },
-      count: properties.length,
-      data: properties,
+      count: docs.length,
+      data: docs,
     });
-  } catch (error) {
-    console.error("Error in Universal Filter:", error);
+
+  } catch (err) {
+    console.error("Error in Universal Filter:", err);
     res.status(500).json({
       success: false,
       message: "Failed to filter and sort properties",
-      error: error.message,
-      pagination: {
-        currentPage: 1,
-        totalPages: 0,
-        totalCount: 0,
-        limit: parseInt(req.query.limit) || 10,
-        hasNextPage: false,
-        hasPrevPage: false,
-      },
+      error: err.message,
+      pagination: { currentPage: 1, totalPages: 0, totalCount: 0, limit: parseInt(req.query.limit) || 10, hasNextPage: false, hasPrevPage: false },
       data: [],
     });
   }
 };
-
-
-
-
 
 
 
@@ -1317,19 +1837,20 @@ const getAddressSuggestions = async (req, res) => {
   }
 };
 
-
 const getOffPlanAddressSuggestions = async (req, res) => {
   try {
     const prefix = req.query.prefix;
     const maxSuggestions = parseInt(req.query.limit) || 8;
 
-    console.log(`Getting off-plan project name suggestions for prefix: "${prefix}"`);
+    console.log(
+      `Getting off-plan project name suggestions for prefix: "${prefix}"`
+    );
 
     // Validation
     if (!prefix) {
       return res.status(400).json({
         success: false,
-        message: "Prefix parameter is required"
+        message: "Prefix parameter is required",
       });
     }
 
@@ -1341,17 +1862,17 @@ const getOffPlanAddressSuggestions = async (req, res) => {
         count: 0,
         debug: {
           prefix: prefix,
-          minLength: 2
-        }
+          minLength: 2,
+        },
       });
     }
 
     // Build query to search project names that start with or contain the prefix
     // Using word boundary regex for better matching
     const query = {
-      "name": { 
-        $regex: new RegExp(`\\b${prefix}`, "i") // Word boundary search, case insensitive
-      }
+      name: {
+        $regex: new RegExp(`\\b${prefix}`, "i"), // Word boundary search, case insensitive
+      },
     };
 
     console.log("MongoDB query:", JSON.stringify(query, null, 2));
@@ -1362,21 +1883,23 @@ const getOffPlanAddressSuggestions = async (req, res) => {
       .select("name area developer") // Select only needed fields for suggestions
       .lean();
 
-    console.log(`Found ${properties.length} off-plan properties matching query`);
+    console.log(
+      `Found ${properties.length} off-plan properties matching query`
+    );
 
     // Create suggestions set to avoid duplicates
     const suggestions = new Set();
-    
+
     // Process each property name
     properties.forEach((property) => {
       if (property.name && property.name.trim()) {
         const projectName = property.name.trim();
-        
+
         // Check if the project name contains the prefix (case insensitive)
         if (projectName.toLowerCase().includes(prefix.toLowerCase())) {
           suggestions.add(projectName);
         }
-        
+
         // Stop if we have enough suggestions
         if (suggestions.size >= maxSuggestions) return;
       }
@@ -1384,7 +1907,7 @@ const getOffPlanAddressSuggestions = async (req, res) => {
 
     // Convert to array and sort
     let suggestionsArray = Array.from(suggestions);
-    
+
     // Sort suggestions for better user experience:
     // 1. Exact matches first
     // 2. Names starting with prefix
@@ -1394,28 +1917,28 @@ const getOffPlanAddressSuggestions = async (req, res) => {
       const aLower = a.toLowerCase();
       const bLower = b.toLowerCase();
       const prefixLower = prefix.toLowerCase();
-      
+
       // Check for exact match
       const aExact = aLower === prefixLower;
       const bExact = bLower === prefixLower;
       if (aExact && !bExact) return -1;
       if (!aExact && bExact) return 1;
-      
+
       // Check for starts with
       const aStarts = aLower.startsWith(prefixLower);
       const bStarts = bLower.startsWith(prefixLower);
       if (aStarts && !bStarts) return -1;
       if (!aStarts && bStarts) return 1;
-      
+
       // Check for word boundary match at start
       const aWordStart = aLower.match(new RegExp(`^${prefixLower}\\b`));
       const bWordStart = bLower.match(new RegExp(`^${prefixLower}\\b`));
       if (aWordStart && !bWordStart) return -1;
       if (!aWordStart && bWordStart) return 1;
-      
+
       // Sort by length (shorter first)
       if (a.length !== b.length) return a.length - b.length;
-      
+
       // Finally sort alphabetically
       return a.localeCompare(b);
     });
@@ -1423,7 +1946,9 @@ const getOffPlanAddressSuggestions = async (req, res) => {
     // Limit to requested number
     suggestionsArray = suggestionsArray.slice(0, maxSuggestions);
 
-    console.log(`Returning ${suggestionsArray.length} project name suggestions`);
+    console.log(
+      `Returning ${suggestionsArray.length} project name suggestions`
+    );
 
     return res.status(200).json({
       success: true,
@@ -1433,28 +1958,25 @@ const getOffPlanAddressSuggestions = async (req, res) => {
       debug: {
         prefix: prefix,
         totalPropertiesFound: properties.length,
-        uniqueSuggestions: suggestionsArray.length
-      }
+        uniqueSuggestions: suggestionsArray.length,
+      },
     });
-
   } catch (error) {
     console.error("Error in getOffPlanAddressSuggestions:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to get off-plan project suggestions",
       error: error.message,
-      data: []
+      data: [],
     });
   }
 };
-
-
 
 // const filterByCommunity = async (req, res) => {
 //   try {
 //     const community = req.query.community;
 //     const listingType = req.query.listingType || req.query.type || "Sale"; // Default to Sale
-//     console.log("LT",listingType)  
+//     console.log("LT",listingType)
 //     const page = parseInt(req.query.page) || 1;
 //     const limit = parseInt(req.query.limit) || 12;
 
@@ -1500,7 +2022,7 @@ const getOffPlanAddressSuggestions = async (req, res) => {
 //     console.log("Combined query:", JSON.stringify(combinedQuery, null, 2));
 
 //     const skip = (page - 1) * limit;
-    
+
 //     // Assuming you have a unified Property model
 //     const totalCount = await Property.countDocuments(combinedQuery);
 //     const totalPages = Math.ceil(totalCount / limit);
@@ -1570,7 +2092,6 @@ const getOffPlanAddressSuggestions = async (req, res) => {
 
 // Alternative version if you want to support both offering_type and listing_type
 
-
 const filterByCommunity = async (req, res) => {
   try {
     const community = req.query.community;
@@ -1587,7 +2108,8 @@ const filterByCommunity = async (req, res) => {
     }
 
     // Normalize listing type
-    const normalizedListingType = listingType.charAt(0).toUpperCase() + listingType.slice(1).toLowerCase();
+    const normalizedListingType =
+      listingType.charAt(0).toUpperCase() + listingType.slice(1).toLowerCase();
 
     const searchWords = community
       .trim()
@@ -1601,23 +2123,23 @@ const filterByCommunity = async (req, res) => {
 
     // Build the query based on listing type
     let listingTypeQuery;
-    
+
     if (normalizedListingType === "Offplan") {
       // For OffPlan properties, check the completion_status field
       listingTypeQuery = {
         "custom_fields.completion_status": {
-          $in: ["off_plan_primary", "off_plan_secondary"]
-        }
+          $in: ["off_plan_primary", "off_plan_secondary"],
+        },
       };
     } else {
       // For Sale/Rent properties, check the offering_type field
       // AND ensure completion_status is NOT off-plan
       const offeringType = normalizedListingType === "Sale" ? "RS" : "RR";
       listingTypeQuery = {
-        "offering_type": offeringType,
+        offering_type: offeringType,
         "custom_fields.completion_status": {
-          $nin: ["off_plan_primary", "off_plan_secondary"]
-        }
+          $nin: ["off_plan_primary", "off_plan_secondary"],
+        },
       };
     }
 
@@ -1632,8 +2154,8 @@ const filterByCommunity = async (req, res) => {
         listingTypeQuery,
         {
           "general_listing_information.status": "Live",
-        }
-      ]
+        },
+      ],
     };
 
     console.log("Community search terms:", searchWords);
@@ -1641,7 +2163,7 @@ const filterByCommunity = async (req, res) => {
     console.log("Combined query:", JSON.stringify(combinedQuery, null, 2));
 
     const skip = (page - 1) * limit;
-    
+
     const totalCount = await Property.countDocuments(combinedQuery);
     const totalPages = Math.ceil(totalCount / limit);
 
@@ -1674,7 +2196,9 @@ const filterByCommunity = async (req, res) => {
       .lean();
 
     console.log(
-      `Found ${properties.length} ${normalizedListingType.toLowerCase()} properties for page ${page} in "${community}" community`
+      `Found ${
+        properties.length
+      } ${normalizedListingType.toLowerCase()} properties for page ${page} in "${community}" community`
     );
 
     res.status(200).json({
@@ -1708,12 +2232,11 @@ const filterByCommunity = async (req, res) => {
   }
 };
 
-
 const filterByCommunityFlexible = async (req, res) => {
   try {
     const community = req.query.community;
     const listingType = req.query.listingType || req.query.type || "Sale";
-    
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
 
@@ -1724,7 +2247,8 @@ const filterByCommunityFlexible = async (req, res) => {
       });
     }
 
-    const normalizedListingType = listingType.charAt(0).toUpperCase() + listingType.slice(1).toLowerCase();
+    const normalizedListingType =
+      listingType.charAt(0).toUpperCase() + listingType.slice(1).toLowerCase();
 
     const searchWords = community
       .trim()
@@ -1746,17 +2270,17 @@ const filterByCommunityFlexible = async (req, res) => {
         },
         {
           $or: [
-            { "listing_type": normalizedListingType },
+            { listing_type: normalizedListingType },
             { "_classification.listingType": normalizedListingType },
-            { 
-              "offering_type": normalizedListingType === "Sale" ? "RS" : "RR" 
-            }
-          ]
+            {
+              offering_type: normalizedListingType === "Sale" ? "RS" : "RR",
+            },
+          ],
         },
         {
-          "general_listing_information.status": "Live"
-        }
-      ]
+          "general_listing_information.status": "Live",
+        },
+      ],
     };
 
     console.log("Community search terms:", searchWords);

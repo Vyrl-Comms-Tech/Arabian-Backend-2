@@ -709,9 +709,7 @@
 
 // // module.exports = mongoose.model("Agent", agentSchema);
 
-
-
-// // Agent Leaderboard Updates 
+// // Agent Leaderboard Updates
 // const mongoose = require("mongoose");
 // const { v4: uuidv4 } = require("uuid");
 
@@ -1622,9 +1620,6 @@
 
 // module.exports = mongoose.model("Agent", agentSchema);
 
-
-
-
 const mongoose = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 
@@ -1738,16 +1733,21 @@ const agentSchema = new mongoose.Schema(
         default: 0,
         min: [0, "Offers cannot be negative"],
       },
-      // ✅ ADD THIS NEW FIELD
+
+      // ✅ Persist YTD last deal info
+      lastDealDate: { type: Date, default: null },
+      lastDealDays: {
+        type: Number,
+        default: null,
+        min: [0, "Days cannot be negative"],
+      },
+
       activePropertiesThisMonth: {
         type: Number,
         default: 0,
         min: [0, "Active properties this month cannot be negative"],
       },
-      lastUpdated: {
-        type: Date,
-        default: Date.now,
-      },
+      lastUpdated: { type: Date, default: Date.now },
     },
 
     // ——— Properties linked from XML parser ———
@@ -2120,31 +2120,24 @@ agentSchema.statics.reorderAllSequences = async function () {
 };
 
 // ——— NEW: Leaderboard Management Methods ———
-agentSchema.methods.updateLeaderboardMetrics = function (metrics) {
-  if (!this.leaderboard) {
-    this.leaderboard = {
-      propertiesSold: 0,
-      totalCommission: 0,
-      viewings: 0,
-      offers: 0,
-    };
-  }
+agentSchema.methods.updateLeaderboardMetrics = function (metrics = {}) {
+  if (!this.leaderboard) this.leaderboard = {};
 
-  if (metrics.propertiesSold !== undefined) {
-    this.leaderboard.propertiesSold = metrics.propertiesSold;
-  }
-  if (metrics.totalCommission !== undefined) {
-    this.leaderboard.totalCommission = metrics.totalCommission;
-  }
-  if (metrics.viewings !== undefined) {
-    this.leaderboard.viewings = metrics.viewings;
-  }
-  if (metrics.offers !== undefined) {
-    this.leaderboard.offers = metrics.offers;
-  }
+  const assignNum = (k) => {
+    if (metrics[k] !== undefined) {
+      // force Mongoose change tracking on nested path
+      this.set(`leaderboard.${k}`, Number(metrics[k]) || 0);
+    }
+  };
 
-  this.leaderboard.lastUpdated = new Date();
-  this.lastUpdated = new Date();
+  ["propertiesSold","totalCommission","viewings","offers",
+   "activePropertiesThisMonth","lastDealDate","lastDealDays"].forEach(assignNum);
+
+  this.set("leaderboard.lastUpdated", new Date());
+  this.set("lastUpdated", new Date());
+
+  // ✅ ensure persistence for plain nested object
+  this.markModified("leaderboard");
   return this;
 };
 

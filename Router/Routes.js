@@ -234,14 +234,17 @@ router.get("/AgentByEmail", AgentController.getAgentByEmail);
 router.get("/delete-agent", AgentController.deleteAgent);
 
 
-// Leaderboard Agent
+// Leaderboard Agent Endpoints for CRONS
 router.get("/GetAgentDeals", AgentController.syncAgentDealsFromSalesforce);
+router.get("/GetAgentCommissions", AgentController.syncAgentCommissionsFromSalesforce);
 router.get("/GetAgentViewings", AgentController.syncAgentViewingsFromSalesforce);
 router.get("/GetAgentOffers", AgentController.syncAgentOffersFromSalesforce);
 router.post("/SaleforceAuthToken",AgentController.getSalesforceToken)
+router.get("/getLeaderboardAgents",AgentController.getLeaderboardAgents)
 
 
-
+// Manual Testing
+router.post("/ManualSaleforceAuthToken",AgentController.GetSalesForceToken)
 
 
 
