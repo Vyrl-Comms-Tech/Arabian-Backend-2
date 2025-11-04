@@ -238,7 +238,7 @@ router.get("/delete-agent", AgentController.deleteAgent);
 router.get("/GetAgentDeals", AgentController.syncAgentDealsFromSalesforce);
 router.get("/GetAgentCommissions", AgentController.syncAgentCommissionsFromSalesforce);
 router.get("/GetAgentViewings", AgentController.syncAgentViewingsFromSalesforce);
-router.get("/GetAgentOffers", AgentController.syncAgentOffersFromSalesforce);
+// router.get("/GetAgentOffers", AgentController.syncAgentOffersFromSalesforce);
 router.post("/SaleforceAuthToken",AgentController.getSalesforceToken)
 router.get("/getLeaderboardAgents",AgentController.getLeaderboardAgents)
 

@@ -254,7 +254,7 @@ const getLeaderboardAgents = async (req, res) => {
       "Charlie Harris",
       "Tom Hastings",
       "Magomed Kartoev",
-      "Ryan Kent",
+      // "Ryan Kent",
       "Douglas Kisuule",
       "Alba Kuloglija",
       "Emma Jean Laycock",
@@ -705,126 +705,265 @@ async function getSalesforceToken() {
   }
 }
 
+// async function syncDealsJob(month = "this_month") {
+//   try {
+//     month = ensureValidMonth(month);
+//     console.log(`🔄 [CRON] Starting Salesforce deals sync for: ${month}`);
+
+//     // Fetch deals (monthly and YTD) and commissions separately
+//     const [monthlyDealsResp, ytdDealsResp, commissionsResp] = await Promise.all(
+//       [
+//         sfGet("/services/apexrest/deals", { month }), // Monthly deals for deal count
+//         sfGet("/services/apexrest/deals", { month: "ytd" }), // YTD deals for last deal date
+//         sfGet("/services/apexrest/commissions", { month }), // Monthly commissions from new endpoint
+//       ]
+//     );
+
+//     const monthlyDeals = monthlyDealsResp?.data?.deals || [];
+//     const ytdDeals = ytdDealsResp?.data?.deals || [];
+//     const commissions = commissionsResp?.data?.commissions || [];
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     // ===== MONTHLY DEAL COUNTS (from deals endpoint) =====
+//     const dealCountsByAgent = new Map();
+//     for (const deal of monthlyDeals) {
+//       const ownerName = deal.owner_name;
+//       if (!ownerName) continue;
+
+//       const names = deal.commission_agents
+//         ? String(deal.commission_agents)
+//             .split(/[;,]/)
+//             .map((n) => n.trim())
+//         : [ownerName];
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!key || !agentMap.has(key)) continue;
+
+//         const current = dealCountsByAgent.get(key) || 0;
+//         dealCountsByAgent.set(key, current + 1);
+//       }
+//     }
+
+//     // ===== MONTHLY COMMISSIONS (from new commissions endpoint) =====
+//     const commissionsByAgent = new Map();
+//     for (const commission of commissions) {
+//       const agentName = commission.agent_name; // or whatever field name your endpoint uses
+//       if (!agentName) continue;
+
+//       const key = normalizeAgentName(agentName);
+//       if (!key || !agentMap.has(key)) continue;
+
+//       const totalCommission = parseFloat(commission.total_commission) || 0;
+//       const current = commissionsByAgent.get(key) || 0;
+//       commissionsByAgent.set(key, current + totalCommission);
+//     }
+
+//     // ===== YTD LAST DEAL DATE (from YTD deals) =====
+//     const agentLastDealDateYTD = new Map();
+//     for (const deal of ytdDeals) {
+//       const ownerName = deal.owner_name;
+//       if (!ownerName) continue;
+
+//       const names = deal.commission_agents
+//         ? String(deal.commission_agents)
+//             .split(/[;,]/)
+//             .map((n) => n.trim())
+//         : [ownerName];
+
+//       const dealDate = new Date(deal.createddate);
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!key || !agentMap.has(key)) continue;
+
+//         const prevDate = agentLastDealDateYTD.get(key);
+//         if (!prevDate || dealDate > prevDate) {
+//           agentLastDealDateYTD.set(key, dealDate);
+//         }
+//       }
+//     }
+
+//     // ===== UPDATE ALL AGENTS =====
+//     const today = new Date();
+//     const updates = [];
+//     let agentsUpdated = 0;
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const dealCount = dealCountsByAgent.get(key) || 0;
+//       const totalCommission = commissionsByAgent.get(key) || 0;
+//       const lastDealDate = agentLastDealDateYTD.get(key) || null;
+//       const lastDealDays = lastDealDate
+//         ? Math.floor((today - lastDealDate) / 86400000)
+//         : null;
+
+//       agent.updateLeaderboardMetrics({
+//         propertiesSold: dealCount,
+//         totalCommission: Math.round(totalCommission * 100) / 100,
+//         lastDealDate,
+//         lastDealDays,
+//       });
+
+//       updates.push(agent.save());
+//       if (dealCount > 0 || totalCommission > 0) agentsUpdated++;
+//     }
+
+//     await Promise.all(updates);
+
+//     console.log(`✅ [CRON] Deals sync completed.`);
+//     console.log(`   - Updated ${agentsUpdated} agents`);
+//     console.log(`   - Monthly deals: ${monthlyDeals.length}`);
+//     console.log(`   - Monthly commissions processed: ${commissions.length}`);
+//     console.log(`   - YTD deals for last-deal tracking: ${ytdDeals.length}`);
+
+//     return {
+//       success: true,
+//       agentsUpdated,
+//       monthlyDeals: monthlyDeals.length,
+//       commissions: commissions.length,
+//       ytdDeals: ytdDeals.length,
+//     };
+//   } catch (error) {
+//     console.error("❌ [CRON] Error syncing deals:", error.message);
+//     throw error;
+//   }
+// }
 async function syncDealsJob(month = "this_month") {
   try {
     month = ensureValidMonth(month);
-    console.log(`🔄 [CRON] Starting Salesforce deals sync for: ${month}`);
+    const { targetY, targetM } = resolveMonthUTC(month);
 
-    // Fetch deals (monthly and YTD) and commissions separately
-    const [monthlyDealsResp, ytdDealsResp, commissionsResp] = await Promise.all(
-      [
-        sfGet("/services/apexrest/deals", { month }), // Monthly deals for deal count
-        sfGet("/services/apexrest/deals", { month: "ytd" }), // YTD deals for last deal date
-        sfGet("/services/apexrest/commissions", { month }), // Monthly commissions from new endpoint
-      ]
+    console.log(`🔄 [CRON] Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
+
+    // Fetch deals: monthly and ytd
+    const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
+      sfGet("/services/apexrest/deals", { month }),
+      sfGet("/services/apexrest/deals", { month: "ytd" }),
+    ]);
+
+    const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
+    const ytdDealsRaw     = ytdDealsResp?.data?.deals || [];
+
+    // Strict month filter (createddate ONLY), same rule as commissions
+    const monthlyDeals = monthlyDealsRaw.filter(d =>
+      isSameUtcMonth(d.createddate, targetY, targetM)
     );
-
-    const monthlyDeals = monthlyDealsResp?.data?.deals || [];
-    const ytdDeals = ytdDealsResp?.data?.deals || [];
-    const commissions = commissionsResp?.data?.commissions || [];
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(
-      agents.map((a) => [normalizeAgentName(a.agentName), a])
-    );
+    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
 
-    // ===== MONTHLY DEAL COUNTS (from deals endpoint) =====
+    // ===== MONTHLY DEAL COUNTS =====
     const dealCountsByAgent = new Map();
-    for (const deal of monthlyDeals) {
-      const ownerName = deal.owner_name;
-      if (!ownerName) continue;
+    const unmatchedMonthly = [];
 
+    for (const deal of monthlyDeals) {
       const names = deal.commission_agents
-        ? String(deal.commission_agents)
-            .split(/[;,]/)
-            .map((n) => n.trim())
-        : [ownerName];
+        ? String(deal.commission_agents).split(/[;,]/).map(n => n.trim()).filter(Boolean)
+        : (deal.owner_name ? [deal.owner_name] : []);
 
       for (const nm of names) {
         const key = normalizeAgentName(nm);
-        if (!key || !agentMap.has(key)) continue;
-
-        const current = dealCountsByAgent.get(key) || 0;
-        dealCountsByAgent.set(key, current + 1);
+        if (!key || !agentMap.has(key)) {
+          if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+          continue;
+        }
+        dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
       }
     }
 
-    // ===== MONTHLY COMMISSIONS (from new commissions endpoint) =====
-    const commissionsByAgent = new Map();
-    for (const commission of commissions) {
-      const agentName = commission.agent_name; // or whatever field name your endpoint uses
-      if (!agentName) continue;
-
-      const key = normalizeAgentName(agentName);
-      if (!key || !agentMap.has(key)) continue;
-
-      const totalCommission = parseFloat(commission.total_commission) || 0;
-      const current = commissionsByAgent.get(key) || 0;
-      commissionsByAgent.set(key, current + totalCommission);
-    }
-
-    // ===== YTD LAST DEAL DATE (from YTD deals) =====
+    // ===== YTD LAST DEAL DATE =====
+    const ytdDeals = ytdDealsRaw;
     const agentLastDealDateYTD = new Map();
+    const unmatchedYtd = [];
+
     for (const deal of ytdDeals) {
-      const ownerName = deal.owner_name;
-      if (!ownerName) continue;
-
       const names = deal.commission_agents
-        ? String(deal.commission_agents)
-            .split(/[;,]/)
-            .map((n) => n.trim())
-        : [ownerName];
+        ? String(deal.commission_agents).split(/[;,]/).map(n => n.trim()).filter(Boolean)
+        : (deal.owner_name ? [deal.owner_name] : []);
 
-      const dealDate = new Date(deal.createddate);
+      const created = deal.createddate;
+      const dealDate = created ? new Date(created) : null;
+      if (!dealDate || isNaN(dealDate.getTime())) continue;
 
       for (const nm of names) {
         const key = normalizeAgentName(nm);
-        if (!key || !agentMap.has(key)) continue;
+        if (!key) continue;
 
-        const prevDate = agentLastDealDateYTD.get(key);
-        if (!prevDate || dealDate > prevDate) {
+        if (!agentMap.has(key)) {
+          if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+          continue;
+        }
+
+        const prev = agentLastDealDateYTD.get(key);
+        if (!prev || dealDate > prev) {
           agentLastDealDateYTD.set(key, dealDate);
         }
       }
     }
 
-    // ===== UPDATE ALL AGENTS =====
-    const today = new Date();
-    const updates = [];
+    // ===== UPDATE AGENTS (DEAL METRICS ONLY) =====
+    // Calculate days using UTC midnight for consistency
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    
+    const ops = [];
     let agentsUpdated = 0;
 
     for (const [key, agent] of agentMap.entries()) {
       const dealCount = dealCountsByAgent.get(key) || 0;
-      const totalCommission = commissionsByAgent.get(key) || 0;
       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      const lastDealDays = lastDealDate
-        ? Math.floor((today - lastDealDate) / 86400000)
-        : null;
+      
+      // Calculate days properly using UTC dates
+      let lastDealDays = null;
+      if (lastDealDate) {
+        const dealDateUTC = new Date(lastDealDate);
+        dealDateUTC.setUTCHours(0, 0, 0, 0);
+        
+        // Calculate difference in days
+        const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
+        lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        
+        // Ensure it's never negative
+        lastDealDays = Math.max(0, lastDealDays);
+      }
 
-      agent.updateLeaderboardMetrics({
-        propertiesSold: dealCount,
-        totalCommission: Math.round(totalCommission * 100) / 100,
-        lastDealDate,
-        lastDealDays,
+      // Prepare bulk update operation
+      ops.push({
+        updateOne: {
+          filter: { _id: agent._id },
+          update: {
+            $set: {
+              "leaderboard.propertiesSold": dealCount,
+              "leaderboard.lastDealDate": lastDealDate,
+              "leaderboard.lastDealDays": lastDealDays,
+              "leaderboard.lastUpdated": new Date(),
+              "lastUpdated": new Date(),
+            }
+          }
+        }
       });
 
-      updates.push(agent.save());
-      if (dealCount > 0 || totalCommission > 0) agentsUpdated++;
+      if (dealCount > 0) agentsUpdated++;
     }
 
-    await Promise.all(updates);
+    // Execute bulk update (safe & fast)
+    if (ops.length) {
+      await Agent.bulkWrite(ops, { ordered: false });
+    }
 
-    console.log(`✅ [CRON] Deals sync completed.`);
-    console.log(`   - Updated ${agentsUpdated} agents`);
-    console.log(`   - Monthly deals: ${monthlyDeals.length}`);
-    console.log(`   - Monthly commissions processed: ${commissions.length}`);
-    console.log(`   - YTD deals for last-deal tracking: ${ytdDeals.length}`);
+    console.log(`✅ [CRON] DEALS-ONLY sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+    console.log(`   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
+    console.log(`   - YTD deals scanned: ${ytdDeals.length}`);
+    console.log(`   - Agents updated: ${agentsUpdated}`);
 
     return {
       success: true,
       agentsUpdated,
       monthlyDeals: monthlyDeals.length,
-      commissions: commissions.length,
       ytdDeals: ytdDeals.length,
     };
   } catch (error) {
@@ -833,257 +972,361 @@ async function syncDealsJob(month = "this_month") {
   }
 }
 
+
+
+// async function syncViewingsJob(month = "this_month") {
+//   try {
+//     month = ensureValidMonth(month);
+//     console.log(`🔄 [CRON] Starting Salesforce viewings sync for: ${month}`);
+
+//     const { data } = await sfGet("/services/apexrest/viewings", { month });
+//     const viewings = data?.viewings || [];
+//     if (!Array.isArray(viewings) || viewings.length === 0) {
+//       console.log("📊 No viewings found in Salesforce");
+
+//       // ✅ NEW: Reset all agents' viewing count to 0 if no viewings found
+//       const agents = await Agent.find({ isActive: true });
+//       const updatePromises = agents.map((agent) => {
+//         agent.updateLeaderboardMetrics({ viewings: 0 });
+//         return agent.save();
+//       });
+//       await Promise.all(updatePromises);
+//       console.log(`✅ [CRON] Reset viewings to 0 for ${agents.length} agents`);
+//       return;
+//     }
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const stats = {
+//       totalViewings: viewings.length,
+//       agentsUpdated: 0,
+//       viewingsByAgent: new Map(),
+//     };
+
+//     for (const v of viewings) {
+//       const key = normalizeAgentName(v.owner);
+//       if (!key || !agentMap.has(key)) continue;
+//       const cur = stats.viewingsByAgent.get(key) || 0;
+//       stats.viewingsByAgent.set(key, cur + 1);
+//     }
+
+//     const updatePromises = [];
+
+//     // ✅ IMPROVED: Update all agents, setting 0 for those without viewings
+//     for (const [key, agent] of agentMap.entries()) {
+//       const count = stats.viewingsByAgent.get(key) || 0;
+//       agent.updateLeaderboardMetrics({ viewings: count });
+//       updatePromises.push(agent.save());
+//       if (count > 0) stats.agentsUpdated++;
+//     }
+
+//     await Promise.all(updatePromises);
+//     console.log(
+//       `✅ [CRON] Viewings sync completed. Updated ${stats.agentsUpdated} agents with viewings`
+//     );
+//   } catch (error) {
+//     console.error("❌ [CRON] Error syncing viewings:", error.message);
+//   }
+// }
+
+// async function runSfCommissionSync({ month = "this_month", verbose = false } = {}) {
+//   const { targetY, targetM } = resolveMonthUTC(month);
+
+//   const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
+//   const commissions = commissionsResp?.data?.commissions || [];
+
+//   const agents = await Agent.find({ isActive: true });
+//   const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+
+//   const commissionsByAgent = new Map();
+//   const unmatchedCommissionAgents = [];
+//   let filteredCount = 0;
+
+//   const traceIncluded = [];
+//   const traceSkipped = [];
+
+//   for (const c of commissions) {
+//     const created = c.createddate;           // strict: createddate only
+//     const keep = isSameUtcMonth(created, targetY, targetM);
+//     if (!keep) {
+//       if (traceSkipped.length < 20) traceSkipped.push({
+//         ref: c.commission_ref_no,
+//         agent: c.agent_name || c.commission_agents,
+//         created
+//       });
+//       continue;
+//     }
+
+//     filteredCount++;
+//     if (traceIncluded.length < 20) traceIncluded.push({
+//       ref: c.commission_ref_no,
+//       agent: c.agent_name || c.commission_agents,
+//       created
+//     });
+
+//     const agentName = c.agent_name || c.commission_agents;
+//     if (!agentName) continue;
+
+//     const key = normalizeAgentName(agentName);
+//     if (!agentMap.has(key)) {
+//       if (!unmatchedCommissionAgents.includes(agentName)) {
+//         unmatchedCommissionAgents.push(agentName);
+//       }
+//       continue;
+//     }
+
+//     const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+//     const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+
+//     commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
+//   }
+
+//   // Bulk write back
+//   const ops = [];
+//   const agentCommissions = [];
+//   let agentsUpdated = 0;
+
+//   for (const [key, agent] of agentMap.entries()) {
+//     const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+//     ops.push({
+//       updateOne: {
+//         filter: { _id: agent._id },
+//         update: {
+//           $set: {
+//             "leaderboard.totalCommission": totalCommission,
+//             "leaderboard.lastUpdated": new Date(),
+//             "lastUpdated": new Date(),
+//           }
+//         }
+//       }
+//     });
+
+//     if (totalCommission > 0) agentsUpdated++;
+//     agentCommissions.push({
+//       agentName: agent.agentName,
+//       agentId: agent.agentId,
+//       totalCommission,
+//       currentDeals: agent.leaderboard?.propertiesSold || 0,
+//     });
+//   }
+
+//   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//   const result = {
+//     success: true,
+//     message: `Synced ${filteredCount} commission records for ${targetY}-${String(targetM + 1).padStart(2, "0")} (UTC).`,
+//     note: "Strict UTC month matching on createddate only.",
+//     data: {
+//       period: month,
+//       targetUTC: { year: targetY, monthIndex0: targetM },
+//       totalCommissionRecords: commissions.length,
+//       currentMonthRecords: filteredCount,
+//       agentsWithCommission: agentsUpdated,
+//       agentsResetToZero: agents.length - agentsUpdated,
+//       agentCommissions: agentCommissions
+//         .filter(a => a.totalCommission > 0)
+//         .sort((a, b) => b.totalCommission - a.totalCommission),
+//       unmatchedAgents: unmatchedCommissionAgents,
+//       debugSample: verbose ? {
+//         includedFirst20: traceIncluded,
+//         skippedFirst20: traceSkipped
+//       } : undefined
+//     }
+//   };
+
+//   return result;
+// }
 async function syncViewingsJob(month = "this_month") {
   try {
     month = ensureValidMonth(month);
-    console.log(`🔄 [CRON] Starting Salesforce viewings sync for: ${month}`);
+    const { targetY, targetM } = resolveMonthUTC(month);
 
-    const { data } = await sfGet("/services/apexrest/viewings", { month });
-    const viewings = data?.viewings || [];
-    if (!Array.isArray(viewings) || viewings.length === 0) {
-      console.log("📊 No viewings found in Salesforce");
+    console.log(`🔄 [CRON] Starting Salesforce VIEWINGS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
 
-      // ✅ NEW: Reset all agents' viewing count to 0 if no viewings found
-      const agents = await Agent.find({ isActive: true });
-      const updatePromises = agents.map((agent) => {
-        agent.updateLeaderboardMetrics({ viewings: 0 });
-        return agent.save();
-      });
-      await Promise.all(updatePromises);
-      console.log(`✅ [CRON] Reset viewings to 0 for ${agents.length} agents`);
-      return;
-    }
+    const resp = await sfGet("/services/apexrest/viewings", { month });
+    const raw = resp?.data?.viewings || [];
+
+    // ✅ Use createdDate (primary), then fallbacks for safety
+    const viewings = raw.filter(v => {
+      const created =
+        v.createdDate ??
+        v.createddate ??
+        v.CreatedDate ??
+        v.activityDate ??
+        null;
+      return created && isSameUtcMonth(created, targetY, targetM);
+    });
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(
-      agents.map((a) => [normalizeAgentName(a.agentName), a])
-    );
+    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
 
-    const stats = {
-      totalViewings: viewings.length,
-      agentsUpdated: 0,
-      viewingsByAgent: new Map(),
-    };
+    const counts = new Map();
+    const unmatchedOwners = new Set();
 
     for (const v of viewings) {
-      const key = normalizeAgentName(v.owner);
-      if (!key || !agentMap.has(key)) continue;
-      const cur = stats.viewingsByAgent.get(key) || 0;
-      stats.viewingsByAgent.set(key, cur + 1);
+      const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
+      const key = normalizeAgentName(owner);
+      if (!key) continue;
+      if (agentMap.has(key)) {
+        counts.set(key, (counts.get(key) || 0) + 1);
+      } else if (owner) {
+        unmatchedOwners.add(owner);
+      }
     }
 
-    const updatePromises = [];
+    // Write: set viewings for all active agents (0 if none)
+    const ops = [];
+    let agentsUpdated = 0;
 
-    // ✅ IMPROVED: Update all agents, setting 0 for those without viewings
     for (const [key, agent] of agentMap.entries()) {
-      const count = stats.viewingsByAgent.get(key) || 0;
-      agent.updateLeaderboardMetrics({ viewings: count });
-      updatePromises.push(agent.save());
-      if (count > 0) stats.agentsUpdated++;
+      const viewingsCount = counts.get(key) || 0;
+      ops.push({
+        updateOne: {
+          filter: { _id: agent._id },
+          update: {
+            $set: {
+              "leaderboard.viewings": viewingsCount,
+              "leaderboard.lastUpdated": new Date(),
+              "lastUpdated": new Date(),
+            },
+          },
+        },
+      });
+      if (viewingsCount > 0) agentsUpdated++;
     }
 
-    await Promise.all(updatePromises);
-    console.log(
-      `✅ [CRON] Viewings sync completed. Updated ${stats.agentsUpdated} agents with viewings`
-    );
+    if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+    console.log(`✅ [CRON] Viewings sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+    console.log(`   - Viewings synced: ${viewings.length}`);
+    console.log(`   - Agents updated: ${agentsUpdated}`);
+
+    return {
+      success: true,
+      agentsUpdated,
+      totalViewings: viewings.length,
+    };
   } catch (error) {
     console.error("❌ [CRON] Error syncing viewings:", error.message);
+    throw error;
   }
 }
 
-async function runSfCommissionSync({ month = "this_month", verbose = false } = {}) {
-  const { targetY, targetM } = resolveMonthUTC(month);
-
-  const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
-  const commissions = commissionsResp?.data?.commissions || [];
-
-  const agents = await Agent.find({ isActive: true });
-  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
-
-  const commissionsByAgent = new Map();
-  const unmatchedCommissionAgents = [];
-  let filteredCount = 0;
-
-  const traceIncluded = [];
-  const traceSkipped = [];
-
-  for (const c of commissions) {
-    const created = c.createddate;           // strict: createddate only
-    const keep = isSameUtcMonth(created, targetY, targetM);
-    if (!keep) {
-      if (traceSkipped.length < 20) traceSkipped.push({
-        ref: c.commission_ref_no,
-        agent: c.agent_name || c.commission_agents,
-        created
-      });
-      continue;
-    }
-
-    filteredCount++;
-    if (traceIncluded.length < 20) traceIncluded.push({
-      ref: c.commission_ref_no,
-      agent: c.agent_name || c.commission_agents,
-      created
-    });
-
-    const agentName = c.agent_name || c.commission_agents;
-    if (!agentName) continue;
-
-    const key = normalizeAgentName(agentName);
-    if (!agentMap.has(key)) {
-      if (!unmatchedCommissionAgents.includes(agentName)) {
-        unmatchedCommissionAgents.push(agentName);
-      }
-      continue;
-    }
-
-    const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
-    const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
-
-    commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
-  }
-
-  // Bulk write back
-  const ops = [];
-  const agentCommissions = [];
-  let agentsUpdated = 0;
-
-  for (const [key, agent] of agentMap.entries()) {
-    const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
-
-    ops.push({
-      updateOne: {
-        filter: { _id: agent._id },
-        update: {
-          $set: {
-            "leaderboard.totalCommission": totalCommission,
-            "leaderboard.lastUpdated": new Date(),
-            "lastUpdated": new Date(),
-          }
-        }
-      }
-    });
-
-    if (totalCommission > 0) agentsUpdated++;
-    agentCommissions.push({
-      agentName: agent.agentName,
-      agentId: agent.agentId,
-      totalCommission,
-      currentDeals: agent.leaderboard?.propertiesSold || 0,
-    });
-  }
-
-  if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
-
-  const result = {
-    success: true,
-    message: `Synced ${filteredCount} commission records for ${targetY}-${String(targetM + 1).padStart(2, "0")} (UTC).`,
-    note: "Strict UTC month matching on createddate only.",
-    data: {
-      period: month,
-      targetUTC: { year: targetY, monthIndex0: targetM },
-      totalCommissionRecords: commissions.length,
-      currentMonthRecords: filteredCount,
-      agentsWithCommission: agentsUpdated,
-      agentsResetToZero: agents.length - agentsUpdated,
-      agentCommissions: agentCommissions
-        .filter(a => a.totalCommission > 0)
-        .sort((a, b) => b.totalCommission - a.totalCommission),
-      unmatchedAgents: unmatchedCommissionAgents,
-      debugSample: verbose ? {
-        includedFirst20: traceIncluded,
-        skippedFirst20: traceSkipped
-      } : undefined
-    }
-  };
-
-  return result;
-}
-async function syncOffersJob(month = "this_month") {
+async function syncCommissionsJobNew(month = "this_month") {
   try {
     month = ensureValidMonth(month);
-    console.log(`🔄 [CRON] Starting Salesforce offers sync for: ${month}`);
+    const { targetY, targetM } = resolveMonthUTC(month);
 
-    const { data } = await sfGet("/services/apexrest/Offers", { month });
-    const offers = data?.Offer || [];
-    if (!Array.isArray(offers) || offers.length === 0) {
-      console.log("📊 No offers found in Salesforce");
+    console.log(`🔄 [CRON] Starting Salesforce COMMISSIONS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
 
-      // ✅ NEW: Reset all agents' offer count to 0 if no offers found
-      const agents = await Agent.find({ isActive: true });
-      const updatePromises = agents.map((agent) => {
-        agent.updateLeaderboardMetrics({ offers: 0 });
-        return agent.save();
-      });
-      await Promise.all(updatePromises);
-      console.log(`✅ [CRON] Reset offers to 0 for ${agents.length} agents`);
-      return;
-    }
+    const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
+    const commissions = commissionsResp?.data?.commissions || [];
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(
-      agents.map((a) => [normalizeAgentName(a.agentName), a])
-    );
+    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
 
-    const stats = {
-      totalOffers: offers.length,
-      agentsUpdated: 0,
-      offersByAgent: new Map(),
-    };
+    const commissionsByAgent = new Map();
+    const unmatchedCommissionAgents = [];
+    let filteredCount = 0;
 
-    for (const o of offers) {
-      const key = normalizeAgentName(o.owner);
-      if (!key || !agentMap.has(key)) continue;
-      const cur = stats.offersByAgent.get(key) || 0;
-      stats.offersByAgent.set(key, cur + 1);
+    for (const c of commissions) {
+      // ✅ ONLY createddate decides inclusion
+      const created = c.createddate;
+      const keep = isSameUtcMonth(created, targetY, targetM);
+
+      if (!keep) {
+        continue;
+      }
+
+      filteredCount++;
+
+      const agentName = c.agent_name || c.commission_agents;
+      if (!agentName) continue;
+
+      const key = normalizeAgentName(agentName);
+      if (!agentMap.has(key)) {
+        if (!unmatchedCommissionAgents.includes(agentName)) {
+          unmatchedCommissionAgents.push(agentName);
+        }
+        continue;
+      }
+
+      const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+      const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+
+      commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
     }
 
-    const updatePromises = [];
+    // Write back (safe & fast)
+    const ops = [];
+    let agentsUpdated = 0;
 
-    // ✅ IMPROVED: Update all agents, setting 0 for those without offers
     for (const [key, agent] of agentMap.entries()) {
-      const count = stats.offersByAgent.get(key) || 0;
-      agent.updateLeaderboardMetrics({ offers: count });
-      updatePromises.push(agent.save());
-      if (count > 0) stats.agentsUpdated++;
+      const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+      ops.push({
+        updateOne: {
+          filter: { _id: agent._id },
+          update: {
+            $set: {
+              "leaderboard.totalCommission": totalCommission,
+              "leaderboard.lastUpdated": new Date(),
+              "lastUpdated": new Date(),
+            }
+          }
+        }
+      });
+
+      if (totalCommission > 0) agentsUpdated++;
     }
 
-    await Promise.all(updatePromises);
-    console.log(
-      `✅ [CRON] Offers sync completed. Updated ${stats.agentsUpdated} agents with offers`
-    );
+    if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+    console.log(`✅ [CRON] Commissions sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+    console.log(`   - Commission records synced: ${filteredCount}`);
+    console.log(`   - Agents updated: ${agentsUpdated}`);
+
+    return {
+      success: true,
+      agentsUpdated,
+      commissionRecords: filteredCount,
+    };
   } catch (error) {
-    console.error("❌ [CRON] Error syncing offers:", error.message);
+    console.error("❌ [CRON] Error syncing commissions:", error.message);
+    throw error;
   }
 }
 
-async function syncMonthlyPropertiesJob() {
+async function syncMonthlyPropertiesJobNew() {
   try {
     console.log("🔄 [CRON] Starting monthly properties update...");
 
     const result = await Agent.updateAllAgentsMonthlyProperties();
 
-    console.log(
-      `✅ [CRON] Monthly properties updated for ${result.agentsUpdated} agents`
-    );
+    console.log(`✅ [CRON] Monthly properties updated for ${result.agentsUpdated} agents`);
     return result;
   } catch (error) {
-    console.error(
-      "❌ [CRON] Error updating monthly properties:",
-      error.message
-    );
+    console.error("❌ [CRON] Error updating monthly properties:", error.message);
+    throw error;
   }
 }
-
 async function runAllSyncs() {
   console.log("⏰ [CRON] Starting scheduled Salesforce sync job...");
   const t0 = Date.now();
   try {
-    // Run deals, viewings, and offers in parallel
-    await Promise.all([syncDealsJob(), syncViewingsJob(), syncOffersJob(),runSfCommissionSync()]);
+    // Run deals, commissions, and viewings in parallel
+    await Promise.all([
+      syncDealsJob(),
+      syncCommissionsJobNew(),
+      syncViewingsJob()
+    ]);
 
-    // ✅ NEW: Run monthly properties after other syncs
-    await syncMonthlyPropertiesJob();
+    // ✅ Run monthly properties after other syncs
+    await syncMonthlyPropertiesJobNew();
 
     const sec = ((Date.now() - t0) / 1000).toFixed(2);
     console.log(`✅ [CRON] All syncs completed successfully in ${sec}s`);
@@ -1091,7 +1334,8 @@ async function runAllSyncs() {
     console.error("❌ [CRON] Error in scheduled sync job:", error.message);
   }
 }
-// Cron guard to avoid double scheduling in hot reload / clustered processes
+
+
 let cronScheduled = false;
 function setupCronJobs() {
   if (cronScheduled) {
@@ -1105,15 +1349,112 @@ function setupCronJobs() {
   });
 
   cronScheduled = true;
-  console.log(
-    "✅ Cron job scheduled: Salesforce sync will run every 30 minutes"
-  );
+  console.log("✅ Cron job scheduled: Salesforce sync will run every 30 minutes");
 
   // Optional: run immediately on startup
   console.log("🚀 Running initial sync on startup...");
-  // Fire and forget
   runAllSyncs();
 }
+
+// async function runAllSyncs() {
+//   console.log("⏰ [CRON] Starting scheduled Salesforce sync job...");
+//   const t0 = Date.now();
+//   try {
+//     // Run deals, viewings, and offers in parallel
+//     await Promise.all([syncDealsJob(), syncViewingsJob(),runSfCommissionSync()]);
+
+//     // ✅ NEW: Run monthly properties after other syncs
+//     await syncMonthlyPropertiesJob();
+
+//     const sec = ((Date.now() - t0) / 1000).toFixed(2);
+//     console.log(`✅ [CRON] All syncs completed successfully in ${sec}s`);
+//   } catch (error) {
+//     console.error("❌ [CRON] Error in scheduled sync job:", error.message);
+//   }
+// }
+// Cron guard to avoid double scheduling in hot reload / clustered processes
+// let cronScheduled = false;
+// function setupCronJobs() {
+//   if (cronScheduled) {
+//     console.log("ℹ️  Cron already scheduled; skipping duplicate registration.");
+//     return;
+//   }
+
+//   // ✅ Main sync job - every 30 minutes
+//   cron.schedule("*/30 * * * *", async () => {
+//     await runAllSyncs();
+//   });
+
+//   cronScheduled = true;
+//   console.log(
+//     "✅ Cron job scheduled: Salesforce sync will run every 30 minutes"
+//   );
+
+//   // Optional: run immediately on startup
+//   console.log("🚀 Running initial sync on startup...");
+//   // Fire and forget
+//   runAllSyncs();
+// }
+
+
+// Removed Offers cron not needed in backup for future if needed again 
+// async function syncOffersJob(month = "this_month") {
+//   try {
+//     month = ensureValidMonth(month);
+//     console.log(`🔄 [CRON] Starting Salesforce offers sync for: ${month}`);
+
+//     const { data } = await sfGet("/services/apexrest/Offers", { month });
+//     const offers = data?.Offer || [];
+//     if (!Array.isArray(offers) || offers.length === 0) {
+//       console.log("📊 No offers found in Salesforce");
+
+//       // ✅ NEW: Reset all agents' offer count to 0 if no offers found
+//       const agents = await Agent.find({ isActive: true });
+//       const updatePromises = agents.map((agent) => {
+//         agent.updateLeaderboardMetrics({ offers: 0 });
+//         return agent.save();
+//       });
+//       await Promise.all(updatePromises);
+//       console.log(`✅ [CRON] Reset offers to 0 for ${agents.length} agents`);
+//       return;
+//     }
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const stats = {
+//       totalOffers: offers.length,
+//       agentsUpdated: 0,
+//       offersByAgent: new Map(),
+//     };
+
+//     for (const o of offers) {
+//       const key = normalizeAgentName(o.owner);
+//       if (!key || !agentMap.has(key)) continue;
+//       const cur = stats.offersByAgent.get(key) || 0;
+//       stats.offersByAgent.set(key, cur + 1);
+//     }
+
+//     const updatePromises = [];
+
+//     // ✅ IMPROVED: Update all agents, setting 0 for those without offers
+//     for (const [key, agent] of agentMap.entries()) {
+//       const count = stats.offersByAgent.get(key) || 0;
+//       agent.updateLeaderboardMetrics({ offers: count });
+//       updatePromises.push(agent.save());
+//       if (count > 0) stats.agentsUpdated++;
+//     }
+
+//     await Promise.all(updatePromises);
+//     console.log(
+//       `✅ [CRON] Offers sync completed. Updated ${stats.agentsUpdated} agents with offers`
+//     );
+//   } catch (error) {
+//     console.error("❌ [CRON] Error syncing offers:", error.message);
+//   }
+// }
 
 // -----------------------------
 // Manual API endpoints
@@ -1141,6 +1482,7 @@ const GetSalesForceToken = async (req, res) => {
   }
 };
 
+// Fetching deals of agents amd days since last deal
 const syncAgentDealsFromSalesforce = async (req, res) => {
   try {
     const { month = "this_month" } = req.query;
@@ -1153,10 +1495,9 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     // Fetch deals:
     // - monthly: for counting deals in the selected month
     // - ytd (or this_year): for lastDealDate (latest in the calendar year)
-    // If your API doesn't support "ytd", switch to "this_year" or similar.
     const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
-      sfGet("/services/apexrest/deals", { month }),           // e.g. "this_month" / "last_month" / "2025-11"
-      sfGet("/services/apexrest/deals", { month: "ytd" }),    // fallback to "this_year" if needed by your API
+      sfGet("/services/apexrest/deals", { month }),
+      sfGet("/services/apexrest/deals", { month: "ytd" }),
     ]);
 
     const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
@@ -1164,7 +1505,7 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
 
     // Strict month filter (createddate ONLY), same rule as commissions
     const monthlyDeals = monthlyDealsRaw.filter(d =>
-      isSameUtcMonth(d.createddate /* don't fallback to lastmodifieddate */, targetY, targetM)
+      isSameUtcMonth(d.createddate, targetY, targetM)
     );
 
     const agents = await Agent.find({ isActive: true });
@@ -1175,7 +1516,6 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     const unmatchedMonthly = [];
 
     for (const deal of monthlyDeals) {
-      // Prefer commission_agents list; fallback to owner_name if none
       const names = deal.commission_agents
         ? String(deal.commission_agents).split(/[;,]/).map(n => n.trim()).filter(Boolean)
         : (deal.owner_name ? [deal.owner_name] : []);
@@ -1191,7 +1531,6 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     }
 
     // ===== YTD LAST DEAL DATE =====
-    // If your API returned empty for "ytd", you can switch argument to "this_year"
     const ytdDeals = ytdDealsRaw;
     const agentLastDealDateYTD = new Map();
     const unmatchedYtd = [];
@@ -1201,10 +1540,9 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
         ? String(deal.commission_agents).split(/[;,]/).map(n => n.trim()).filter(Boolean)
         : (deal.owner_name ? [deal.owner_name] : []);
 
-      // Use createddate as the deal moment (same as commissions rule)
       const created = deal.createddate;
       const dealDate = created ? new Date(created) : null;
-      if (!dealDate) continue;
+      if (!dealDate || isNaN(dealDate.getTime())) continue;
 
       for (const nm of names) {
         const key = normalizeAgentName(nm);
@@ -1223,24 +1561,47 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     }
 
     // ===== UPDATE AGENTS (DEAL METRICS ONLY) =====
-    const today = new Date();
-    const updates = [];
+    // Calculate days using UTC midnight for consistency
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    
+    const ops = [];
     let agentsUpdated = 0;
     const agentDeals = [];
 
     for (const [key, agent] of agentMap.entries()) {
       const dealCount = dealCountsByAgent.get(key) || 0;
       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      const lastDealDays = lastDealDate ? Math.floor((today - lastDealDate) / 86400000) : null;
+      
+      // Calculate days properly using UTC dates
+      let lastDealDays = null;
+      if (lastDealDate) {
+        const dealDateUTC = new Date(lastDealDate);
+        dealDateUTC.setUTCHours(0, 0, 0, 0);
+        
+        // Calculate difference in days
+        const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
+        lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        
+        // Ensure it's never negative
+        lastDealDays = Math.max(0, lastDealDays);
+      }
 
-      // Only deal-related fields (do NOT touch totalCommission here)
-      agent.updateLeaderboardMetrics({
-        propertiesSold: dealCount,
-        lastDealDate,
-        lastDealDays,
+      // Prepare bulk update operation
+      ops.push({
+        updateOne: {
+          filter: { _id: agent._id },
+          update: {
+            $set: {
+              "leaderboard.propertiesSold": dealCount,
+              "leaderboard.lastDealDate": lastDealDate,
+              "leaderboard.lastDealDays": lastDealDays,
+              "leaderboard.lastUpdated": new Date(),
+              "lastUpdated": new Date(),
+            }
+          }
+        }
       });
-
-      updates.push(agent.save());
 
       agentDeals.push({
         agentName: agent.agentName,
@@ -1254,7 +1615,10 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
       if (dealCount > 0) agentsUpdated++;
     }
 
-    await Promise.all(updates);
+    // Execute bulk update (safe & fast)
+    if (ops.length) {
+      await Agent.bulkWrite(ops, { ordered: false });
+    }
 
     console.log(`✅ DEALS-ONLY sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
     console.log(`   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
@@ -1283,7 +1647,7 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
-
+// Fetching monthly commissions
 const syncAgentCommissionsFromSalesforce = async (req, res) => {
   try {
     const { month = "this_month" } = req.query;
@@ -1401,83 +1765,7 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
   }
 };
 
-
-
-// const syncAgentViewingsFromSalesforce = async (req, res) => {
-//   try {
-//     const month = ensureValidMonth(req.query?.month);
-//     const { data } = await sfGet("/services/apexrest/viewings", { month });
-//     const viewings = data?.viewings || [];
-
-//     const agents = await Agent.find({ isActive: true });
-//     const agentMap = new Map(
-//       agents.map((a) => [normalizeAgentName(a.agentName), a])
-//     );
-
-//     const stats = {
-//       totalViewings: viewings.length,
-//       agentsUpdated: 0,
-//       unmatchedOwners: new Set(),
-//       viewingsByAgent: new Map(),
-//     };
-
-//     for (const v of viewings) {
-//       const key = normalizeAgentName(v.owner);
-//       if (!key) continue;
-
-//       if (agentMap.has(key)) {
-//         const cur = stats.viewingsByAgent.get(key) || 0;
-//         stats.viewingsByAgent.set(key, cur + 1);
-//       } else {
-//         stats.unmatchedOwners.add(v.owner);
-//       }
-//     }
-
-//     const updates = [];
-//     for (const [key, count] of stats.viewingsByAgent.entries()) {
-//       const agent = agentMap.get(key);
-//       if (!agent) continue;
-//       agent.updateLeaderboardMetrics({ viewings: count });
-//       updates.push(agent.save());
-//       stats.agentsUpdated++;
-//     }
-//     await Promise.all(updates);
-
-//     return res.status(200).json({
-//       success: true,
-//       message: `Successfully synced ${stats.totalViewings} viewings and updated ${stats.agentsUpdated} agents`,
-//       data: {
-//         period: month,
-//         totalViewings: stats.totalViewings,
-//         agentsUpdated: stats.agentsUpdated,
-//         agentViewings: Array.from(stats.viewingsByAgent.entries()).map(
-//           ([key, count]) => ({
-//             agentName: agentMap.get(key).agentName,
-//             agentId: agentMap.get(key).agentId,
-//             viewingCount: count,
-//           })
-//         ),
-//         unmatchedOwners:
-//           stats.unmatchedOwners.size > 0
-//             ? Array.from(stats.unmatchedOwners)
-//             : undefined,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("❌ Error syncing Salesforce viewings:", error.message);
-//     const status = error?.response?.status || 500;
-//     const msg =
-//       status === 401
-//         ? "Salesforce authentication failed. Invalid or expired Bearer token"
-//         : "Failed to fetch viewings from Salesforce";
-//     return res.status(status === 401 ? 401 : 503).json({
-//       success: false,
-//       error: msg,
-//       details: error.message,
-//     });
-//   }
-// };
-
+// Fetching monthly viewings
 const syncAgentViewingsFromSalesforce = async (req, res) => {
   try {
     const { month = "this_month" } = req.query;
@@ -1571,83 +1859,7 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
   }
 };
 
-
-
-const syncAgentOffersFromSalesforce = async (req, res) => {
-  try {
-    const month = ensureValidMonth(req.query?.month);
-    const { data } = await sfGet("/services/apexrest/Offers", { month });
-    const offers = data?.Offer || [];
-
-    const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(
-      agents.map((a) => [normalizeAgentName(a.agentName), a])
-    );
-
-    const stats = {
-      totalOffers: offers.length,
-      agentsUpdated: 0,
-      unmatchedOwners: new Set(),
-      offersByAgent: new Map(),
-    };
-
-    for (const o of offers) {
-      const key = normalizeAgentName(o.owner);
-      if (!key) continue;
-
-      if (agentMap.has(key)) {
-        const cur = stats.offersByAgent.get(key) || 0;
-        stats.offersByAgent.set(key, cur + 1);
-      } else {
-        stats.unmatchedOwners.add(o.owner);
-      }
-    }
-
-    const updates = [];
-    for (const [key, count] of stats.offersByAgent.entries()) {
-      const agent = agentMap.get(key);
-      if (!agent) continue;
-      agent.updateLeaderboardMetrics({ offers: count });
-      updates.push(agent.save());
-      stats.agentsUpdated++;
-    }
-    await Promise.all(updates);
-
-    return res.status(200).json({
-      success: true,
-      message: `Successfully synced ${stats.totalOffers} offers and updated ${stats.agentsUpdated} agents`,
-      data: {
-        period: month,
-        totalOffers: stats.totalOffers,
-        agentsUpdated: stats.agentsUpdated,
-        agentOffers: Array.from(stats.offersByAgent.entries()).map(
-          ([key, count]) => ({
-            agentName: agentMap.get(key).agentName,
-            agentId: agentMap.get(key).agentId,
-            offerCount: count,
-          })
-        ),
-        unmatchedOwners:
-          stats.unmatchedOwners.size > 0
-            ? Array.from(stats.unmatchedOwners)
-            : undefined,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Error syncing Salesforce offers:", error.message);
-    const status = error?.response?.status || 500;
-    const msg =
-      status === 401
-        ? "Salesforce authentication failed. Invalid or expired Bearer token"
-        : "Failed to fetch offers from Salesforce";
-    return res.status(status === 401 ? 401 : 503).json({
-      success: false,
-      error: msg,
-      details: error.message,
-    });
-  }
-};
-
+// Updating monthly properties for all agents
 const updateMonthlyPropertiesForAllAgents = async (req, res) => {
   try {
     console.log("📊 Starting monthly properties update...");
@@ -1669,6 +1881,81 @@ const updateMonthlyPropertiesForAllAgents = async (req, res) => {
   }
 };
 
+// Removed Offers Function not needed in backup for future if needed again 
+// const syncAgentOffersFromSalesforce = async (req, res) => {
+//   try {
+//     const month = ensureValidMonth(req.query?.month);
+//     const { data } = await sfGet("/services/apexrest/Offers", { month });
+//     const offers = data?.Offer || [];
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const stats = {
+//       totalOffers: offers.length,
+//       agentsUpdated: 0,
+//       unmatchedOwners: new Set(),
+//       offersByAgent: new Map(),
+//     };
+
+//     for (const o of offers) {
+//       const key = normalizeAgentName(o.owner);
+//       if (!key) continue;
+
+//       if (agentMap.has(key)) {
+//         const cur = stats.offersByAgent.get(key) || 0;
+//         stats.offersByAgent.set(key, cur + 1);
+//       } else {
+//         stats.unmatchedOwners.add(o.owner);
+//       }
+//     }
+
+//     const updates = [];
+//     for (const [key, count] of stats.offersByAgent.entries()) {
+//       const agent = agentMap.get(key);
+//       if (!agent) continue;
+//       agent.updateLeaderboardMetrics({ offers: count });
+//       updates.push(agent.save());
+//       stats.agentsUpdated++;
+//     }
+//     await Promise.all(updates);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Successfully synced ${stats.totalOffers} offers and updated ${stats.agentsUpdated} agents`,
+//       data: {
+//         period: month,
+//         totalOffers: stats.totalOffers,
+//         agentsUpdated: stats.agentsUpdated,
+//         agentOffers: Array.from(stats.offersByAgent.entries()).map(
+//           ([key, count]) => ({
+//             agentName: agentMap.get(key).agentName,
+//             agentId: agentMap.get(key).agentId,
+//             offerCount: count,
+//           })
+//         ),
+//         unmatchedOwners:
+//           stats.unmatchedOwners.size > 0
+//             ? Array.from(stats.unmatchedOwners)
+//             : undefined,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error syncing Salesforce offers:", error.message);
+//     const status = error?.response?.status || 500;
+//     const msg =
+//       status === 401
+//         ? "Salesforce authentication failed. Invalid or expired Bearer token"
+//         : "Failed to fetch offers from Salesforce";
+//     return res.status(status === 401 ? 401 : 503).json({
+//       success: false,
+//       error: msg,
+//       details: error.message,
+//     });
+//   }
+// };
 
 
 
@@ -1688,7 +1975,7 @@ module.exports = {
   getLeaderboardAgents,
   syncAgentDealsFromSalesforce,
   syncAgentViewingsFromSalesforce,
-  syncAgentOffersFromSalesforce,
+  // syncAgentOffersFromSalesforce,
   syncAgentCommissionsFromSalesforce,
   updateMonthlyPropertiesForAllAgents,
 
