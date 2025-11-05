@@ -173,6 +173,7 @@ const fetchAndSaveProperties = async (req, res) => {
 // controllers/NewOffplanController.js (inside getNewOffPlanProperties)
 const getNewOffPlanProperties = async (req, res) => {
   try {
+    console.log("WORKING")
     const page = parseInt(req.query.page || "1", 10);
     const limit = parseInt(req.query.limit || "12", 10);
     const skip = (page - 1) * limit;
@@ -238,6 +239,7 @@ const getNewOffPlanProperties = async (req, res) => {
 };
 
 const getSIngleOffplanProperty = async (req, res) => {
+  console.log("WORKING")
   const property_id = req.query.property_id;
   try {
     console.log("HELLO");

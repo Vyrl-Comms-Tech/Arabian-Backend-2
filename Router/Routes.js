@@ -397,6 +397,6 @@ router.get("/agents/admin/performance", async (req, res) => {
 router.post("/list-property", ListProperty);
 
 // Will Run Cors, main parser route
-router.get("/parse-xml", ParseXml);
+router.get("/parse-xml", ParseXml.parseXmlFromUrl);
 
 module.exports = router;

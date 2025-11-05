@@ -2,6 +2,7 @@ const axios = require("axios");
 const xml2js = require("xml2js");
 const Property = require("../Models/PropertyModel");
 const Agent = require("../Models/AgentModel");
+const cron = require("node-cron");
 
 // Simple QR code extraction function
 const extractQRCodeUrl = (qrCode) => {
@@ -907,4 +908,24 @@ const parseXmlFromUrl = async (req, res, next) => {
   }
 };
 
-module.exports = parseXmlFromUrl;
+
+// Cron job for every 2 hour
+const schedulePropertySync = () => {
+  // Cron expression: '0 */2 * * *' means every 2 hours at minute 0
+  cron.schedule('0 */2 * * *', async () => {
+    console.log(`🔄 [${new Date().toISOString()}] Starting scheduled property sync...`);
+    
+    try {
+      // Call your endpoint internally
+      const response = await axios.get('http://localhost:YOUR_PORT/api/parse-xml');
+      
+      console.log(`✅ [${new Date().toISOString()}] Property sync completed:`, response.data);
+    } catch (error) {
+      console.error(`❌ [${new Date().toISOString()}] Property sync failed:`, error.message);
+    }
+  });
+
+  console.log('⏰ Property sync scheduler initialized - Running every 2 hours');
+};
+
+module.exports = {parseXmlFromUrl, schedulePropertySync};

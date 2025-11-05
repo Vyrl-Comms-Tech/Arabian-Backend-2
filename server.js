@@ -2,6 +2,7 @@
 require('./Config/redis.js'); // Initialize Redis connection
 require('dotenv').config();
 const { setupCronJobs } = require("./Controllers/AgentController.js");
+const { schedulePropertySync} = require("./Controllers/XmlParser.js");
 const express = require('express');
 const app = express();
 const cors = require('cors');
@@ -54,25 +55,14 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 } // 2MB
 });
 
-// ---- Example image upload route ----
-app.post('/api/upload', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, message: 'No file uploaded' });
-  }
-  res.json({
-    success: true,
-    filename: req.file.filename,
-    url: `/uploads/${req.file.filename}`
-  });
-});
 
-// Export upload middleware for use in routes
-module.exports.upload = upload;
-module.exports.cloudinary = cloudinary;
+
+
 
 
 // Agents with salesforce sync cron job
 setupCronJobs();
+schedulePropertySync()
 
 // Then mount your API routes
 app.use("/", router);
@@ -85,3 +75,8 @@ ConnectDb().then(() => {
 }).catch((err) => {
   console.log("DB connection failed:", err);
 });
+
+
+// Export upload middleware for use in routes
+module.exports.upload = upload;
+module.exports.cloudinary = cloudinary;
