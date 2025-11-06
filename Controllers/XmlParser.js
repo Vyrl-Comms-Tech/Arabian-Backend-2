@@ -111,8 +111,9 @@ const createPropertyDataForAgent = (propertyData) => {
   const customFields = propertyData.custom_fields || {};
 
   // normalize "created_at" (string) and "timestamp" to Date (UTC)
-  const sourceCreatedAtDate = parseXmlTsAsUTC(propertyData.created_at) || new Date();
-  const sourceUpdatedAtDate = parseXmlTsAsUTC(propertyData.timestamp) || new Date();
+  const sourceCreatedAtDate = parseXmlTsAsUTC(propertyData.created_at) || null; // <- no fallback
+ const sourceUpdatedAtDate = parseXmlTsAsUTC(propertyData.timestamp) || null; // ok to be null
+
 
   // Map listingType to match Agent model enum ['Sale','Rent','Off Plan']
   let agentListingType = propertyData.listing_type || 'Sale';
@@ -141,16 +142,19 @@ const createPropertyDataForAgent = (propertyData) => {
     // 👇 CRITICAL: carry the source dates through
     addedDate: sourceCreatedAtDate,          // exact same *moment* as Property.created_at
     addedDateString: propertyData.created_at, // store the literal XML string too (optional but useful)
-    lastUpdated: sourceUpdatedAtDate,        // mirrors Property.timestamp (or XML updated field)
+    
+     lastUpdated: sourceUpdatedAtDate || new Date(), // ok to fallback to now ONLY for lastUpdated
   };
 };
 function parseXmlTsAsUTC(ts) {
   if (!ts || typeof ts !== 'string') return null;
   // "2024-05-28 10:20:21" -> "2024-05-28T10:20:21Z"
-  const iso = ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z';
+  const trimmed = ts.trim();
+  const iso = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T') + 'Z';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
 }
+
 
 
 // Link property to existing agent

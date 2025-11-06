@@ -2350,7 +2350,7 @@ agentSchema.methods.addOrUpdateProperty = function (propertyData) {
     // CREATE — never fall back to now; if the source is missing we keep null
     this.properties.push({
       ...propertyData,
-      addedDate: incomingAdded || null,
+      addedDate: incomingAdded ?? null,
       addedDateString: incomingAddedStr || null,
       lastUpdated: propertyData.lastUpdated || now,
     });
