@@ -89,7 +89,6 @@ const ALLOWED_MONTH = new Set([
   "last_12_months",
 ]);
 
-
 // Test
 // -----------------------------
 // Create a new agent
@@ -254,8 +253,6 @@ const getAgents = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
-
-
 
 const getLeaderboardAgents = async (req, res) => {
   try {
@@ -680,7 +677,7 @@ const deleteAgent = async (req, res) => {
 };
 
 // -----------------------------
-// LEADERBOARD 
+// LEADERBOARD
 // -----------------------------
 
 // Helper Functions
@@ -701,10 +698,16 @@ function resolveMonthUTC(monthParam = "this_month") {
   let m = now.getUTCMonth();
 
   if (monthParam === "last_month") {
-    if (m === 0) { y -= 1; m = 11; } else { m -= 1; }
+    if (m === 0) {
+      y -= 1;
+      m = 11;
+    } else {
+      m -= 1;
+    }
   } else if (/^\d{4}-\d{2}$/.test(monthParam)) {
     const [yy, mm] = monthParam.split("-").map(Number);
-    y = yy; m = mm - 1;
+    y = yy;
+    m = mm - 1;
   }
   return { targetY: y, targetM: m };
 }
@@ -716,12 +719,9 @@ function isSameUtcMonth(dateString, targetY, targetM) {
   const { y, m } = getUtcYearMonth(t);
   return y === targetY && m === targetM;
 }
-// 
+//
 
-
-
-
-// CRON FUNCTIONS 
+// CRON FUNCTIONS
 async function getSalesforceToken() {
   // console.log("Working")
   try {
@@ -818,24 +818,24 @@ async function getSalesforceToken() {
 //     // Calculate days using UTC midnight for consistency
 //     const todayUTC = new Date();
 //     todayUTC.setUTCHours(0, 0, 0, 0);
-    
+
 //     const ops = [];
 //     let agentsUpdated = 0;
 
 //     for (const [key, agent] of agentMap.entries()) {
 //       const dealCount = dealCountsByAgent.get(key) || 0;
 //       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      
+
 //       // Calculate days properly using UTC dates
 //       let lastDealDays = null;
 //       if (lastDealDate) {
 //         const dealDateUTC = new Date(lastDealDate);
 //         dealDateUTC.setUTCHours(0, 0, 0, 0);
-        
+
 //         // Calculate difference in days
 //         const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
 //         lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
 //         // Ensure it's never negative
 //         lastDealDays = Math.max(0, lastDealDays);
 //       }
@@ -890,15 +890,17 @@ async function aggregateDeals(monthParam) {
   ]);
 
   const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
-  const ytdDealsRaw     = ytdDealsResp?.data?.deals || [];
+  const ytdDealsRaw = ytdDealsResp?.data?.deals || [];
 
   // Strict UTC month filter on createddate (same as commissions)
-  const monthlyDeals = monthlyDealsRaw.filter(d =>
+  const monthlyDeals = monthlyDealsRaw.filter((d) =>
     isSameUtcMonth(d.createddate, targetY, targetM)
   );
 
   const agents = await Agent.find({ isActive: true });
-  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+  const agentMap = new Map(
+    agents.map((a) => [normalizeAgentName(a.agentName), a])
+  );
 
   // ===== MONTHLY DEAL COUNTS =====
   const dealCountsByAgent = new Map();
@@ -945,7 +947,8 @@ async function aggregateDeals(monthParam) {
   }
 
   return {
-    targetY, targetM,
+    targetY,
+    targetM,
     monthlyDealsRaw,
     monthlyDeals,
     ytdDealsRawCount: ytdDealsRaw.length,
@@ -955,11 +958,16 @@ async function aggregateDeals(monthParam) {
     unmatchedYtd,
     agentMap,
   };
-}function parseTarget(monthParam = "this_month") {
+}
+function parseTarget(monthParam = "this_month") {
   // Returns { mode: 'monthly'|'ytd', targetY, targetM }
   if (monthParam === "ytd") {
     const now = new Date();
-    return { mode: "ytd", targetY: now.getUTCFullYear(), targetM: now.getUTCMonth() };
+    return {
+      mode: "ytd",
+      targetY: now.getUTCFullYear(),
+      targetM: now.getUTCMonth(),
+    };
   }
   const { targetY, targetM } = resolveMonthUTC(monthParam);
   return { mode: "monthly", targetY, targetM };
@@ -975,7 +983,8 @@ async function syncDealsJob(month = "this_month") {
   try {
     // IMPORTANT: do NOT coerce with ensureValidMonth
     const {
-      targetY, targetM,
+      targetY,
+      targetM,
       monthlyDealsRaw,
       monthlyDeals,
       ytdDealsRawCount,
@@ -986,7 +995,8 @@ async function syncDealsJob(month = "this_month") {
       agentMap,
     } = await aggregateDeals(month);
 
-    const todayUTC = new Date(); todayUTC.setUTCHours(0,0,0,0);
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
 
     const ops = [];
     let agentsUpdated = 0;
@@ -997,8 +1007,12 @@ async function syncDealsJob(month = "this_month") {
 
       let lastDealDays = null;
       if (lastDealDate) {
-        const dealDateUTC = new Date(lastDealDate); dealDateUTC.setUTCHours(0,0,0,0);
-        lastDealDays = Math.max(0, Math.floor((todayUTC - dealDateUTC) / 86400000));
+        const dealDateUTC = new Date(lastDealDate);
+        dealDateUTC.setUTCHours(0, 0, 0, 0);
+        lastDealDays = Math.max(
+          0,
+          Math.floor((todayUTC - dealDateUTC) / 86400000)
+        );
       }
 
       ops.push({
@@ -1010,10 +1024,10 @@ async function syncDealsJob(month = "this_month") {
               "leaderboard.lastDealDate": lastDealDate,
               "leaderboard.lastDealDays": lastDealDays,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
-            }
-          }
-        }
+              lastUpdated: new Date(),
+            },
+          },
+        },
       });
 
       if (dealCount > 0) agentsUpdated++;
@@ -1021,12 +1035,23 @@ async function syncDealsJob(month = "this_month") {
 
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
-    console.log(`✅ [CRON] DEALS-ONLY sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
-    console.log(`   - Monthly deals (strict UTC filter): ${monthlyDeals.length}/${monthlyDealsRaw.length} returned`);
+    console.log(
+      `✅ [CRON] DEALS-ONLY sync completed for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`
+    );
+    console.log(
+      `   - Monthly deals (strict UTC filter): ${monthlyDeals.length}/${monthlyDealsRaw.length} returned`
+    );
     console.log(`   - YTD deals scanned: ${ytdDealsRawCount}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
-    if (unmatchedMonthly.length) console.log(`   - Unmatched (monthly sample):`, unmatchedMonthly.slice(0, 10));
-    if (unmatchedYtd.length) console.log(`   - Unmatched (ytd sample):`, unmatchedYtd.slice(0, 10));
+    if (unmatchedMonthly.length)
+      console.log(
+        `   - Unmatched (monthly sample):`,
+        unmatchedMonthly.slice(0, 10)
+      );
+    if (unmatchedYtd.length)
+      console.log(`   - Unmatched (ytd sample):`, unmatchedYtd.slice(0, 10));
 
     return {
       success: true,
@@ -1039,8 +1064,6 @@ async function syncDealsJob(month = "this_month") {
     throw error;
   }
 }
-
-
 
 // async function syncViewingsJob(month = "this_month") {
 //   try {
@@ -1211,14 +1234,20 @@ async function syncDealsJob(month = "this_month") {
 async function aggregateViewings(monthParam = "this_month") {
   const { targetY, targetM } = resolveMonthUTC(monthParam);
 
-  const resp = await sfGet("/services/apexrest/viewings", { month: monthParam });
+  const resp = await sfGet("/services/apexrest/viewings", {
+    month: monthParam,
+  });
   const raw = resp?.data?.viewings || [];
 
   // Strict UTC month filter on the 'start' field
-  const viewings = raw.filter(v => v.start && isSameUtcMonth(v.start, targetY, targetM));
+  const viewings = raw.filter(
+    (v) => v.start && isSameUtcMonth(v.start, targetY, targetM)
+  );
 
   const agents = await Agent.find({ isActive: true });
-  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+  const agentMap = new Map(
+    agents.map((a) => [normalizeAgentName(a.agentName), a])
+  );
 
   const counts = new Map();
   const unmatchedOwners = new Set();
@@ -1235,14 +1264,29 @@ async function aggregateViewings(monthParam = "this_month") {
     }
   }
 
-  return { targetY, targetM, viewings, counts, unmatchedOwners, agentMap, totalReturned: raw.length };
+  return {
+    targetY,
+    targetM,
+    viewings,
+    counts,
+    unmatchedOwners,
+    agentMap,
+    totalReturned: raw.length,
+  };
 }
 
 async function syncViewingsJob(month = "this_month") {
   try {
     // ❌ Do NOT coerce with ensureValidMonth — accept YYYY-MM just like manual
-    const { targetY, targetM, viewings, counts, unmatchedOwners, agentMap, totalReturned } =
-      await aggregateViewings(month);
+    const {
+      targetY,
+      targetM,
+      viewings,
+      counts,
+      unmatchedOwners,
+      agentMap,
+      totalReturned,
+    } = await aggregateViewings(month);
 
     const ops = [];
     let agentsUpdated = 0;
@@ -1257,10 +1301,10 @@ async function syncViewingsJob(month = "this_month") {
             $set: {
               "leaderboard.viewings": viewingsCount,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
-            }
-          }
-        }
+              lastUpdated: new Date(),
+            },
+          },
+        },
       });
 
       if (viewingsCount > 0) agentsUpdated++;
@@ -1268,10 +1312,20 @@ async function syncViewingsJob(month = "this_month") {
 
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
-    console.log(`✅ [CRON] Viewings sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
-    console.log(`   - Viewings after strict UTC filter: ${viewings.length}/${totalReturned} returned`);
+    console.log(
+      `✅ [CRON] Viewings sync completed for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`
+    );
+    console.log(
+      `   - Viewings after strict UTC filter: ${viewings.length}/${totalReturned} returned`
+    );
     console.log(`   - Agents updated: ${agentsUpdated}`);
-    if (unmatchedOwners.size) console.log(`   - Unmatched (sample):`, Array.from(unmatchedOwners).slice(0, 10));
+    if (unmatchedOwners.size)
+      console.log(
+        `   - Unmatched (sample):`,
+        Array.from(unmatchedOwners).slice(0, 10)
+      );
 
     return { success: true, agentsUpdated, totalViewings: viewings.length };
   } catch (error) {
@@ -1368,24 +1422,34 @@ function parseTarget(monthParam = "this_month") {
   // Returns { mode: 'monthly'|'ytd', targetY, targetM }
   if (monthParam === "ytd") {
     const now = new Date();
-    return { mode: "ytd", targetY: now.getUTCFullYear(), targetM: now.getUTCMonth() };
+    return {
+      mode: "ytd",
+      targetY: now.getUTCFullYear(),
+      targetM: now.getUTCMonth(),
+    };
   }
   const { targetY, targetM } = resolveMonthUTC(monthParam);
   return { mode: "monthly", targetY, targetM };
 }
 
 function amountNumber(raw) {
-  return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+  return typeof raw === "string"
+    ? Number(raw.replace(/[, ]/g, ""))
+    : Number(raw) || 0;
 }
 
 async function aggregateCommissions(monthParam) {
   const { mode, targetY, targetM } = parseTarget(monthParam);
 
-  const commissionsResp = await sfGet("/services/apexrest/commissions", { month: monthParam });
+  const commissionsResp = await sfGet("/services/apexrest/commissions", {
+    month: monthParam,
+  });
   const commissions = commissionsResp?.data?.commissions || [];
 
   const agents = await Agent.find();
-  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+  const agentMap = new Map(
+    agents.map((a) => [normalizeAgentName(a.agentName), a])
+  );
 
   const commissionsByAgent = new Map();
   const unmatchedCommissionAgents = [];
@@ -1393,9 +1457,10 @@ async function aggregateCommissions(monthParam) {
 
   for (const c of commissions) {
     const created = c.createddate;
-    const inScope = mode === "ytd"
-      ? created && new Date(created).getUTCFullYear() === targetY   // keep same UTC year
-      : isSameUtcMonth(created, targetY, targetM);                  // keep same UTC month
+    const inScope =
+      mode === "ytd"
+        ? created && new Date(created).getUTCFullYear() === targetY // keep same UTC year
+        : isSameUtcMonth(created, targetY, targetM); // keep same UTC month
 
     if (!inScope) continue;
 
@@ -1406,7 +1471,8 @@ async function aggregateCommissions(monthParam) {
 
     const key = normalizeAgentName(agentName);
     if (!agentMap.has(key)) {
-      if (!unmatchedCommissionAgents.includes(agentName)) unmatchedCommissionAgents.push(agentName);
+      if (!unmatchedCommissionAgents.includes(agentName))
+        unmatchedCommissionAgents.push(agentName);
       continue;
     }
 
@@ -1415,20 +1481,35 @@ async function aggregateCommissions(monthParam) {
     commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amt);
   }
 
-  return { commissionsByAgent, unmatchedCommissionAgents, filteredCount, agentMap, targetY, targetM, mode };
+  return {
+    commissionsByAgent,
+    unmatchedCommissionAgents,
+    filteredCount,
+    agentMap,
+    targetY,
+    targetM,
+    mode,
+  };
 }
 
 async function syncCommissionsJobNew(month = "this_month") {
   try {
     // IMPORTANT: do NOT coerce the month with ensureValidMonth
-    const { commissionsByAgent, unmatchedCommissionAgents, filteredCount, agentMap, targetY, targetM } =
-      await aggregateCommissions(month);
+    const {
+      commissionsByAgent,
+      unmatchedCommissionAgents,
+      filteredCount,
+      agentMap,
+      targetY,
+      targetM,
+    } = await aggregateCommissions(month);
 
     const ops = [];
     let agentsUpdated = 0;
 
     for (const [key, agent] of agentMap.entries()) {
-      const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+      const totalCommission =
+        Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
 
       ops.push({
         updateOne: {
@@ -1437,10 +1518,10 @@ async function syncCommissionsJobNew(month = "this_month") {
             $set: {
               "leaderboard.totalCommission": totalCommission,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
-            }
-          }
-        }
+              lastUpdated: new Date(),
+            },
+          },
+        },
       });
 
       if (totalCommission > 0) agentsUpdated++;
@@ -1448,11 +1529,18 @@ async function syncCommissionsJobNew(month = "this_month") {
 
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
-    console.log(`✅ [CRON] Commissions sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+    console.log(
+      `✅ [CRON] Commissions sync completed for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`
+    );
     console.log(`   - Commission records synced: ${filteredCount}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
     if (unmatchedCommissionAgents.length) {
-      console.log(`   - Unmatched (sample):`, unmatchedCommissionAgents.slice(0, 10));
+      console.log(
+        `   - Unmatched (sample):`,
+        unmatchedCommissionAgents.slice(0, 10)
+      );
     }
 
     return { success: true, agentsUpdated, commissionRecords: filteredCount };
@@ -1468,10 +1556,15 @@ async function syncMonthlyPropertiesJobNew() {
 
     const result = await Agent.updateAllAgentsMonthlyProperties();
 
-    console.log(`✅ [CRON] Monthly properties updated for ${result.agentsUpdated} agents`);
+    console.log(
+      `✅ [CRON] Monthly properties updated for ${result.agentsUpdated} agents`
+    );
     return result;
   } catch (error) {
-    console.error("❌ [CRON] Error updating monthly properties:", error.message);
+    console.error(
+      "❌ [CRON] Error updating monthly properties:",
+      error.message
+    );
     throw error;
   }
 }
@@ -1483,7 +1576,7 @@ async function runAllSyncs() {
     await Promise.all([
       syncDealsJob(),
       syncCommissionsJobNew(),
-      syncViewingsJob()
+      syncViewingsJob(),
     ]);
 
     // ✅ Run monthly properties after other syncs
@@ -1496,7 +1589,6 @@ async function runAllSyncs() {
   }
 }
 
-
 let cronScheduled = false;
 function setupCronJobs() {
   if (cronScheduled) {
@@ -1505,12 +1597,15 @@ function setupCronJobs() {
   }
 
   // ✅ Main sync job - every 30 minutes
-  cron.schedule("*/30 * * * *", async () => {
+  // every 5 minutes
+  cron.schedule("*/5 * * * *", async () => {
     await runAllSyncs();
   });
 
   cronScheduled = true;
-  console.log("✅ Cron job scheduled: Salesforce sync will run every 30 minutes");
+  console.log(
+    "✅ Cron job scheduled: Salesforce sync will run every 30 minutes"
+  );
 
   // Optional: run immediately on startup
   console.log("🚀 Running initial sync on startup...");
@@ -1557,8 +1652,7 @@ function setupCronJobs() {
 //   runAllSyncs();
 // }
 
-
-// Removed Offers cron not needed in backup for future if needed again 
+// Removed Offers cron not needed in backup for future if needed again
 // async function syncOffersJob(month = "this_month") {
 //   try {
 //     month = ensureValidMonth(month);
@@ -1725,7 +1819,7 @@ const GetSalesForceToken = async (req, res) => {
 //     // Calculate days using UTC midnight for consistency
 //     const todayUTC = new Date();
 //     todayUTC.setUTCHours(0, 0, 0, 0);
-    
+
 //     const ops = [];
 //     let agentsUpdated = 0;
 //     const agentDeals = [];
@@ -1733,17 +1827,17 @@ const GetSalesForceToken = async (req, res) => {
 //     for (const [key, agent] of agentMap.entries()) {
 //       const dealCount = dealCountsByAgent.get(key) || 0;
 //       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      
+
 //       // Calculate days properly using UTC dates
 //       let lastDealDays = null;
 //       if (lastDealDate) {
 //         const dealDateUTC = new Date(lastDealDate);
 //         dealDateUTC.setUTCHours(0, 0, 0, 0);
-        
+
 //         // Calculate difference in days
 //         const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
 //         lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
 //         // Ensure it's never negative
 //         lastDealDays = Math.max(0, lastDealDays);
 //       }
@@ -1816,7 +1910,11 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     // Reuse the same helpers you used for commissions sync
     const { targetY, targetM } = resolveMonthUTC(month);
 
-    console.log(`🔄 Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
+    console.log(
+      `🔄 Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")}`
+    );
 
     // Fetch deals:
     // - monthly: for counting deals in the selected month
@@ -1827,15 +1925,17 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     ]);
 
     const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
-    const ytdDealsRaw     = ytdDealsResp?.data?.deals || [];
+    const ytdDealsRaw = ytdDealsResp?.data?.deals || [];
 
     // Strict month filter (createddate ONLY), same rule as commissions
-    const monthlyDeals = monthlyDealsRaw.filter(d =>
+    const monthlyDeals = monthlyDealsRaw.filter((d) =>
       isSameUtcMonth(d.createddate, targetY, targetM)
     );
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+    const agentMap = new Map(
+      agents.map((a) => [normalizeAgentName(a.agentName), a])
+    );
 
     // ===== MONTHLY DEAL COUNTS =====
     const dealCountsByAgent = new Map();
@@ -1844,11 +1944,11 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     for (const deal of monthlyDeals) {
       // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
       const names = [];
-      
+
       if (deal.deal_agent) {
         names.push(deal.deal_agent.trim());
       }
-      
+
       if (deal.deal_agent_2) {
         names.push(deal.deal_agent_2.trim());
       }
@@ -1874,11 +1974,11 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     for (const deal of ytdDeals) {
       // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
       const names = [];
-      
+
       if (deal.deal_agent) {
         names.push(deal.deal_agent.trim());
       }
-      
+
       if (deal.deal_agent_2) {
         names.push(deal.deal_agent_2.trim());
       }
@@ -1910,7 +2010,7 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     // Calculate days using UTC midnight for consistency
     const todayUTC = new Date();
     todayUTC.setUTCHours(0, 0, 0, 0);
-    
+
     const ops = [];
     let agentsUpdated = 0;
     const agentDeals = [];
@@ -1918,17 +2018,17 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     for (const [key, agent] of agentMap.entries()) {
       const dealCount = dealCountsByAgent.get(key) || 0;
       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      
+
       // Calculate days properly using UTC dates
       let lastDealDays = null;
       if (lastDealDate) {
         const dealDateUTC = new Date(lastDealDate);
         dealDateUTC.setUTCHours(0, 0, 0, 0);
-        
+
         // Calculate difference in days
         const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
         lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
         // Ensure it's never negative
         lastDealDays = Math.max(0, lastDealDays);
       }
@@ -1943,10 +2043,10 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
               "leaderboard.lastDealDate": lastDealDate,
               "leaderboard.lastDealDays": lastDealDays,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
-            }
-          }
-        }
+              lastUpdated: new Date(),
+            },
+          },
+        },
       });
 
       agentDeals.push({
@@ -1965,8 +2065,14 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
       await Agent.bulkWrite(ops, { ordered: false });
     }
 
-    console.log(`✅ DEALS-ONLY sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
-    console.log(`   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
+    console.log(
+      `✅ DEALS-ONLY sync completed for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`
+    );
+    console.log(
+      `   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`
+    );
     console.log(`   - YTD deals scanned: ${ytdDeals.length}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
 
@@ -1999,11 +2105,15 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
     const { month = "this_month" } = req.query;
     const { targetY, targetM } = resolveMonthUTC(month);
 
-    const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
+    const commissionsResp = await sfGet("/services/apexrest/commissions", {
+      month,
+    });
     const commissions = commissionsResp?.data?.commissions || [];
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+    const agentMap = new Map(
+      agents.map((a) => [normalizeAgentName(a.agentName), a])
+    );
 
     const commissionsByAgent = new Map();
     const unmatchedCommissionAgents = [];
@@ -2020,20 +2130,22 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
 
       if (!keep) {
         // for debugging, capture a few
-        if (traceSkipped.length < 20) traceSkipped.push({
-          ref: c.commission_ref_no,
-          agent: c.agent_name || c.commission_agents,
-          created
-        });
+        if (traceSkipped.length < 20)
+          traceSkipped.push({
+            ref: c.commission_ref_no,
+            agent: c.agent_name || c.commission_agents,
+            created,
+          });
         continue;
       }
 
       filteredCount++;
-      if (traceIncluded.length < 20) traceIncluded.push({
-        ref: c.commission_ref_no,
-        agent: c.agent_name || c.commission_agents,
-        created
-      });
+      if (traceIncluded.length < 20)
+        traceIncluded.push({
+          ref: c.commission_ref_no,
+          agent: c.agent_name || c.commission_agents,
+          created,
+        });
 
       const agentName = c.agent_name || c.commission_agents;
       if (!agentName) continue;
@@ -2047,7 +2159,10 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
       }
 
       const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
-      const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+      const amount =
+        typeof raw === "string"
+          ? Number(raw.replace(/[, ]/g, ""))
+          : Number(raw) || 0;
 
       commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
     }
@@ -2058,7 +2173,8 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
     let agentsUpdated = 0;
 
     for (const [key, agent] of agentMap.entries()) {
-      const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+      const totalCommission =
+        Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
 
       ops.push({
         updateOne: {
@@ -2067,10 +2183,10 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
             $set: {
               "leaderboard.totalCommission": totalCommission,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
-            }
-          }
-        }
+              lastUpdated: new Date(),
+            },
+          },
+        },
       });
 
       if (totalCommission > 0) agentsUpdated++;
@@ -2086,7 +2202,9 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Synced ${filteredCount} commission records for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`,
+      message: `Synced ${filteredCount} commission records for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`,
       note: "Strict UTC month matching on createddate only.",
       data: {
         period: month,
@@ -2096,14 +2214,14 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
         agentsWithCommission: agentsUpdated,
         agentsResetToZero: agents.length - agentsUpdated,
         agentCommissions: agentCommissions
-          .filter(a => a.totalCommission > 0)
+          .filter((a) => a.totalCommission > 0)
           .sort((a, b) => b.totalCommission - a.totalCommission),
         unmatchedAgents: unmatchedCommissionAgents,
         debugSample: {
           includedFirst20: traceIncluded,
-          skippedFirst20: traceSkipped
-        }
-      }
+          skippedFirst20: traceSkipped,
+        },
+      },
     });
   } catch (error) {
     console.error("❌ Error syncing commissions:", error);
@@ -2117,19 +2235,25 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
     const { month = "this_month" } = req.query;
     const { targetY, targetM } = resolveMonthUTC(month);
 
-    console.log(`🔄 Starting Salesforce VIEWINGS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
+    console.log(
+      `🔄 Starting Salesforce VIEWINGS sync for: ${month} -> UTC ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")}`
+    );
 
     const resp = await sfGet("/services/apexrest/viewings", { month });
     const raw = resp?.data?.viewings || [];
 
     // ✅ Use start field (primary) for filtering by month
-    const viewings = raw.filter(v => {
+    const viewings = raw.filter((v) => {
       const start = v.start || null;
       return start && isSameUtcMonth(start, targetY, targetM);
     });
 
     const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+    const agentMap = new Map(
+      agents.map((a) => [normalizeAgentName(a.agentName), a])
+    );
 
     const counts = new Map();
     const unmatchedOwners = new Set();
@@ -2158,7 +2282,7 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
             $set: {
               "leaderboard.viewings": viewingsCount,
               "leaderboard.lastUpdated": new Date(),
-              "lastUpdated": new Date(),
+              lastUpdated: new Date(),
             },
           },
         },
@@ -2168,11 +2292,18 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
 
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
-    console.log(`✅ Viewings sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+    console.log(
+      `✅ Viewings sync completed for ${targetY}-${String(targetM + 1).padStart(
+        2,
+        "0"
+      )} (UTC).`
+    );
 
     return res.status(200).json({
       success: true,
-      message: `Synced ${viewings.length} viewings for ${targetY}-${String(targetM + 1).padStart(2, "0")} (UTC).`,
+      message: `Synced ${viewings.length} viewings for ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")} (UTC).`,
       note: "Strict UTC month matching on 'start' field. Agents without viewings set to 0.",
       data: {
         period: month,
@@ -2182,11 +2313,13 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
         agentViewings: Array.from(counts.entries())
           .map(([k, c]) => ({
             agentName: agentMap.get(k)?.agentName,
-            agentId:   agentMap.get(k)?.agentId,
+            agentId: agentMap.get(k)?.agentId,
             viewingCount: c,
           }))
           .sort((a, b) => b.viewingCount - a.viewingCount),
-        unmatchedOwners: unmatchedOwners.size ? Array.from(unmatchedOwners) : undefined,
+        unmatchedOwners: unmatchedOwners.size
+          ? Array.from(unmatchedOwners)
+          : undefined,
       },
     });
   } catch (error) {
@@ -2226,7 +2359,7 @@ const updateMonthlyPropertiesForAllAgents = async (req, res) => {
   }
 };
 
-// Removed Offers Function not needed in backup for future if needed again 
+// Removed Offers Function not needed in backup for future if needed again
 // const syncAgentOffersFromSalesforce = async (req, res) => {
 //   try {
 //     const month = ensureValidMonth(req.query?.month);
@@ -2301,8 +2434,6 @@ const updateMonthlyPropertiesForAllAgents = async (req, res) => {
 //     });
 //   }
 // };
-
-
 
 // -----------------------------
 // Exports
