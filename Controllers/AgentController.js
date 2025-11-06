@@ -1596,9 +1596,8 @@ function setupCronJobs() {
     return;
   }
 
-  // ✅ Main sync job - every 30 minutes
-  // every 5 minutes
-  cron.schedule("*/5 * * * *", async () => {
+  // ✅ Main sync job - every 15 minutes
+   cron.schedule("*/15 * * * *", async () => {
     await runAllSyncs();
   });
 
