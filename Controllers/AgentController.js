@@ -880,127 +880,127 @@ async function getSalesforceToken() {
 //     throw error;
 //   }
 // }
+async function aggregateDeals(monthParam) {
+  const { targetY, targetM } = resolveMonthUTC(monthParam);
 
+  // Pull both datasets exactly as requested (no coercion)
+  const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
+    sfGet("/services/apexrest/deals", { month: monthParam }),
+    sfGet("/services/apexrest/deals", { month: "ytd" }),
+  ]);
+
+  const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
+  const ytdDealsRaw     = ytdDealsResp?.data?.deals || [];
+
+  // Strict UTC month filter on createddate (same as commissions)
+  const monthlyDeals = monthlyDealsRaw.filter(d =>
+    isSameUtcMonth(d.createddate, targetY, targetM)
+  );
+
+  const agents = await Agent.find({ isActive: true });
+  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+
+  // ===== MONTHLY DEAL COUNTS =====
+  const dealCountsByAgent = new Map();
+  const unmatchedMonthly = [];
+
+  for (const deal of monthlyDeals) {
+    const names = twoAgentNamesOnly(deal);
+    if (names.length === 0) continue;
+
+    for (const nm of names) {
+      const key = normalizeAgentName(nm);
+      if (!key || !agentMap.has(key)) {
+        if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+        continue;
+      }
+      dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
+    }
+  }
+
+  // ===== YTD LAST DEAL DATE =====
+  const agentLastDealDateYTD = new Map();
+  const unmatchedYtd = [];
+
+  for (const deal of ytdDealsRaw) {
+    const names = twoAgentNamesOnly(deal);
+    if (names.length === 0) continue;
+
+    const created = deal.createddate;
+    const dealDate = created ? new Date(created) : null;
+    if (!dealDate || Number.isNaN(dealDate.getTime())) continue;
+
+    for (const nm of names) {
+      const key = normalizeAgentName(nm);
+      if (!key) continue;
+
+      if (!agentMap.has(key)) {
+        if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+        continue;
+      }
+
+      const prev = agentLastDealDateYTD.get(key);
+      if (!prev || dealDate > prev) agentLastDealDateYTD.set(key, dealDate);
+    }
+  }
+
+  return {
+    targetY, targetM,
+    monthlyDealsRaw,
+    monthlyDeals,
+    ytdDealsRawCount: ytdDealsRaw.length,
+    dealCountsByAgent,
+    agentLastDealDateYTD,
+    unmatchedMonthly,
+    unmatchedYtd,
+    agentMap,
+  };
+}function parseTarget(monthParam = "this_month") {
+  // Returns { mode: 'monthly'|'ytd', targetY, targetM }
+  if (monthParam === "ytd") {
+    const now = new Date();
+    return { mode: "ytd", targetY: now.getUTCFullYear(), targetM: now.getUTCMonth() };
+  }
+  const { targetY, targetM } = resolveMonthUTC(monthParam);
+  return { mode: "monthly", targetY, targetM };
+}
+
+function twoAgentNamesOnly(deal) {
+  const names = [];
+  if (deal.deal_agent) names.push(deal.deal_agent.trim());
+  if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+  return names.filter(Boolean);
+}
 async function syncDealsJob(month = "this_month") {
   try {
-    month = ensureValidMonth(month);
-    const { targetY, targetM } = resolveMonthUTC(month);
+    // IMPORTANT: do NOT coerce with ensureValidMonth
+    const {
+      targetY, targetM,
+      monthlyDealsRaw,
+      monthlyDeals,
+      ytdDealsRawCount,
+      dealCountsByAgent,
+      agentLastDealDateYTD,
+      unmatchedMonthly,
+      unmatchedYtd,
+      agentMap,
+    } = await aggregateDeals(month);
 
-    console.log(`🔄 [CRON] Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
+    const todayUTC = new Date(); todayUTC.setUTCHours(0,0,0,0);
 
-    // Fetch deals: monthly and ytd
-    const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
-      sfGet("/services/apexrest/deals", { month }),
-      sfGet("/services/apexrest/deals", { month: "ytd" }),
-    ]);
-
-    const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
-    const ytdDealsRaw     = ytdDealsResp?.data?.deals || [];
-
-    // Strict month filter (createddate ONLY), same rule as commissions
-    const monthlyDeals = monthlyDealsRaw.filter(d =>
-      isSameUtcMonth(d.createddate, targetY, targetM)
-    );
-
-    const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
-
-    // ===== MONTHLY DEAL COUNTS =====
-    const dealCountsByAgent = new Map();
-    const unmatchedMonthly = [];
-
-    for (const deal of monthlyDeals) {
-      // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
-      const names = [];
-      
-      if (deal.deal_agent) {
-        names.push(deal.deal_agent.trim());
-      }
-      
-      if (deal.deal_agent_2) {
-        names.push(deal.deal_agent_2.trim());
-      }
-
-      // If no deal_agent fields, skip this deal
-      if (names.length === 0) continue;
-
-      for (const nm of names) {
-        const key = normalizeAgentName(nm);
-        if (!key || !agentMap.has(key)) {
-          if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
-          continue;
-        }
-        dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
-      }
-    }
-
-    // ===== YTD LAST DEAL DATE =====
-    const ytdDeals = ytdDealsRaw;
-    const agentLastDealDateYTD = new Map();
-    const unmatchedYtd = [];
-
-    for (const deal of ytdDeals) {
-      // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
-      const names = [];
-      
-      if (deal.deal_agent) {
-        names.push(deal.deal_agent.trim());
-      }
-      
-      if (deal.deal_agent_2) {
-        names.push(deal.deal_agent_2.trim());
-      }
-
-      // If no deal_agent fields, skip this deal
-      if (names.length === 0) continue;
-
-      const created = deal.createddate;
-      const dealDate = created ? new Date(created) : null;
-      if (!dealDate || isNaN(dealDate.getTime())) continue;
-
-      for (const nm of names) {
-        const key = normalizeAgentName(nm);
-        if (!key) continue;
-
-        if (!agentMap.has(key)) {
-          if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
-          continue;
-        }
-
-        const prev = agentLastDealDateYTD.get(key);
-        if (!prev || dealDate > prev) {
-          agentLastDealDateYTD.set(key, dealDate);
-        }
-      }
-    }
-
-    // ===== UPDATE AGENTS (DEAL METRICS ONLY) =====
-    // Calculate days using UTC midnight for consistency
-    const todayUTC = new Date();
-    todayUTC.setUTCHours(0, 0, 0, 0);
-    
     const ops = [];
     let agentsUpdated = 0;
 
     for (const [key, agent] of agentMap.entries()) {
       const dealCount = dealCountsByAgent.get(key) || 0;
       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-      
-      // Calculate days properly using UTC dates
+
       let lastDealDays = null;
       if (lastDealDate) {
-        const dealDateUTC = new Date(lastDealDate);
-        dealDateUTC.setUTCHours(0, 0, 0, 0);
-        
-        // Calculate difference in days
-        const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
-        lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
-        // Ensure it's never negative
-        lastDealDays = Math.max(0, lastDealDays);
+        const dealDateUTC = new Date(lastDealDate); dealDateUTC.setUTCHours(0,0,0,0);
+        lastDealDays = Math.max(0, Math.floor((todayUTC - dealDateUTC) / 86400000));
       }
 
-      // Prepare bulk update operation
       ops.push({
         updateOne: {
           filter: { _id: agent._id },
@@ -1019,21 +1019,20 @@ async function syncDealsJob(month = "this_month") {
       if (dealCount > 0) agentsUpdated++;
     }
 
-    // Execute bulk update (safe & fast)
-    if (ops.length) {
-      await Agent.bulkWrite(ops, { ordered: false });
-    }
+    if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
     console.log(`✅ [CRON] DEALS-ONLY sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
-    console.log(`   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
-    console.log(`   - YTD deals scanned: ${ytdDeals.length}`);
+    console.log(`   - Monthly deals (strict UTC filter): ${monthlyDeals.length}/${monthlyDealsRaw.length} returned`);
+    console.log(`   - YTD deals scanned: ${ytdDealsRawCount}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
+    if (unmatchedMonthly.length) console.log(`   - Unmatched (monthly sample):`, unmatchedMonthly.slice(0, 10));
+    if (unmatchedYtd.length) console.log(`   - Unmatched (ytd sample):`, unmatchedYtd.slice(0, 10));
 
     return {
       success: true,
       agentsUpdated,
       monthlyDeals: monthlyDeals.length,
-      ytdDeals: ytdDeals.length,
+      ytdDeals: ytdDealsRawCount,
     };
   } catch (error) {
     console.error("❌ [CRON] Error syncing deals:", error.message);
@@ -1209,45 +1208,48 @@ async function syncDealsJob(month = "this_month") {
 
 //   return result;
 // }
+async function aggregateViewings(monthParam = "this_month") {
+  const { targetY, targetM } = resolveMonthUTC(monthParam);
+
+  const resp = await sfGet("/services/apexrest/viewings", { month: monthParam });
+  const raw = resp?.data?.viewings || [];
+
+  // Strict UTC month filter on the 'start' field
+  const viewings = raw.filter(v => v.start && isSameUtcMonth(v.start, targetY, targetM));
+
+  const agents = await Agent.find({ isActive: true });
+  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+
+  const counts = new Map();
+  const unmatchedOwners = new Set();
+
+  for (const v of viewings) {
+    const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
+    const key = normalizeAgentName(owner);
+    if (!key) continue;
+
+    if (agentMap.has(key)) {
+      counts.set(key, (counts.get(key) || 0) + 1);
+    } else if (owner) {
+      unmatchedOwners.add(owner);
+    }
+  }
+
+  return { targetY, targetM, viewings, counts, unmatchedOwners, agentMap, totalReturned: raw.length };
+}
+
 async function syncViewingsJob(month = "this_month") {
   try {
-    month = ensureValidMonth(month);
-    const { targetY, targetM } = resolveMonthUTC(month);
+    // ❌ Do NOT coerce with ensureValidMonth — accept YYYY-MM just like manual
+    const { targetY, targetM, viewings, counts, unmatchedOwners, agentMap, totalReturned } =
+      await aggregateViewings(month);
 
-    console.log(`🔄 [CRON] Starting Salesforce VIEWINGS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
-
-    const resp = await sfGet("/services/apexrest/viewings", { month });
-    const raw = resp?.data?.viewings || [];
-
-    // ✅ Use start field (primary) for filtering by month
-    const viewings = raw.filter(v => {
-      const start = v.start || null;
-      return start && isSameUtcMonth(start, targetY, targetM);
-    });
-
-    const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
-
-    const counts = new Map();
-    const unmatchedOwners = new Set();
-
-    for (const v of viewings) {
-      const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
-      const key = normalizeAgentName(owner);
-      if (!key) continue;
-      if (agentMap.has(key)) {
-        counts.set(key, (counts.get(key) || 0) + 1);
-      } else if (owner) {
-        unmatchedOwners.add(owner);
-      }
-    }
-
-    // Write: set viewings for all active agents (0 if none)
     const ops = [];
     let agentsUpdated = 0;
 
     for (const [key, agent] of agentMap.entries()) {
       const viewingsCount = counts.get(key) || 0;
+
       ops.push({
         updateOne: {
           filter: { _id: agent._id },
@@ -1256,76 +1258,172 @@ async function syncViewingsJob(month = "this_month") {
               "leaderboard.viewings": viewingsCount,
               "leaderboard.lastUpdated": new Date(),
               "lastUpdated": new Date(),
-            },
-          },
-        },
+            }
+          }
+        }
       });
+
       if (viewingsCount > 0) agentsUpdated++;
     }
 
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
     console.log(`✅ [CRON] Viewings sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
-    console.log(`   - Viewings synced: ${viewings.length}`);
+    console.log(`   - Viewings after strict UTC filter: ${viewings.length}/${totalReturned} returned`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
+    if (unmatchedOwners.size) console.log(`   - Unmatched (sample):`, Array.from(unmatchedOwners).slice(0, 10));
 
-    return {
-      success: true,
-      agentsUpdated,
-      totalViewings: viewings.length,
-    };
+    return { success: true, agentsUpdated, totalViewings: viewings.length };
   } catch (error) {
     console.error("❌ [CRON] Error syncing viewings:", error.message);
     throw error;
   }
 }
 
-async function syncCommissionsJobNew(month = "this_month") {
-  try {
-    month = ensureValidMonth(month);
-    const { targetY, targetM } = resolveMonthUTC(month);
+// async function syncCommissionsJobNew(month = "this_month") {
+//   try {
+//     month = ensureValidMonth(month);
+//     const { targetY, targetM } = resolveMonthUTC(month);
 
-    console.log(`🔄 [CRON] Starting Salesforce COMMISSIONS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
+//     console.log(`🔄 [CRON] Starting Salesforce COMMISSIONS sync for: ${month} -> UTC ${targetY}-${String(targetM+1).padStart(2,"0")}`);
 
-    const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
-    const commissions = commissionsResp?.data?.commissions || [];
+//     const commissionsResp = await sfGet("/services/apexrest/commissions", { month });
+//     const commissions = commissionsResp?.data?.commissions || [];
 
-    const agents = await Agent.find({ isActive: true });
-    const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
 
-    const commissionsByAgent = new Map();
-    const unmatchedCommissionAgents = [];
-    let filteredCount = 0;
+//     const commissionsByAgent = new Map();
+//     const unmatchedCommissionAgents = [];
+//     let filteredCount = 0;
 
-    for (const c of commissions) {
-      // ✅ ONLY createddate decides inclusion
-      const created = c.createddate;
-      const keep = isSameUtcMonth(created, targetY, targetM);
+//     for (const c of commissions) {
+//       // ✅ ONLY createddate decides inclusion
+//       const created = c.createddate;
+//       const keep = isSameUtcMonth(created, targetY, targetM);
 
-      if (!keep) {
-        continue;
-      }
+//       if (!keep) {
+//         continue;
+//       }
 
-      filteredCount++;
+//       filteredCount++;
 
-      const agentName = c.agent_name || c.commission_agents;
-      if (!agentName) continue;
+//       const agentName = c.agent_name || c.commission_agents;
+//       if (!agentName) continue;
 
-      const key = normalizeAgentName(agentName);
-      if (!agentMap.has(key)) {
-        if (!unmatchedCommissionAgents.includes(agentName)) {
-          unmatchedCommissionAgents.push(agentName);
-        }
-        continue;
-      }
+//       const key = normalizeAgentName(agentName);
+//       if (!agentMap.has(key)) {
+//         if (!unmatchedCommissionAgents.includes(agentName)) {
+//           unmatchedCommissionAgents.push(agentName);
+//         }
+//         continue;
+//       }
 
-      const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
-      const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+//       const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+//       const amount = typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
 
-      commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
+//       commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
+//     }
+
+//     // Write back (safe & fast)
+//     const ops = [];
+//     let agentsUpdated = 0;
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: {
+//             $set: {
+//               "leaderboard.totalCommission": totalCommission,
+//               "leaderboard.lastUpdated": new Date(),
+//               "lastUpdated": new Date(),
+//             }
+//           }
+//         }
+//       });
+
+//       if (totalCommission > 0) agentsUpdated++;
+//     }
+
+//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//     console.log(`✅ [CRON] Commissions sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
+//     console.log(`   - Commission records synced: ${filteredCount}`);
+//     console.log(`   - Agents updated: ${agentsUpdated}`);
+
+//     return {
+//       success: true,
+//       agentsUpdated,
+//       commissionRecords: filteredCount,
+//     };
+//   } catch (error) {
+//     console.error("❌ [CRON] Error syncing commissions:", error.message);
+//     throw error;
+//   }
+// }
+function parseTarget(monthParam = "this_month") {
+  // Returns { mode: 'monthly'|'ytd', targetY, targetM }
+  if (monthParam === "ytd") {
+    const now = new Date();
+    return { mode: "ytd", targetY: now.getUTCFullYear(), targetM: now.getUTCMonth() };
+  }
+  const { targetY, targetM } = resolveMonthUTC(monthParam);
+  return { mode: "monthly", targetY, targetM };
+}
+
+function amountNumber(raw) {
+  return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+}
+
+async function aggregateCommissions(monthParam) {
+  const { mode, targetY, targetM } = parseTarget(monthParam);
+
+  const commissionsResp = await sfGet("/services/apexrest/commissions", { month: monthParam });
+  const commissions = commissionsResp?.data?.commissions || [];
+
+  const agents = await Agent.find();
+  const agentMap = new Map(agents.map(a => [normalizeAgentName(a.agentName), a]));
+
+  const commissionsByAgent = new Map();
+  const unmatchedCommissionAgents = [];
+  let filteredCount = 0;
+
+  for (const c of commissions) {
+    const created = c.createddate;
+    const inScope = mode === "ytd"
+      ? created && new Date(created).getUTCFullYear() === targetY   // keep same UTC year
+      : isSameUtcMonth(created, targetY, targetM);                  // keep same UTC month
+
+    if (!inScope) continue;
+
+    filteredCount++;
+
+    const agentName = c.agent_name || c.commission_agents;
+    if (!agentName) continue;
+
+    const key = normalizeAgentName(agentName);
+    if (!agentMap.has(key)) {
+      if (!unmatchedCommissionAgents.includes(agentName)) unmatchedCommissionAgents.push(agentName);
+      continue;
     }
 
-    // Write back (safe & fast)
+    const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+    const amt = amountNumber(raw);
+    commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amt);
+  }
+
+  return { commissionsByAgent, unmatchedCommissionAgents, filteredCount, agentMap, targetY, targetM, mode };
+}
+
+async function syncCommissionsJobNew(month = "this_month") {
+  try {
+    // IMPORTANT: do NOT coerce the month with ensureValidMonth
+    const { commissionsByAgent, unmatchedCommissionAgents, filteredCount, agentMap, targetY, targetM } =
+      await aggregateCommissions(month);
+
     const ops = [];
     let agentsUpdated = 0;
 
@@ -1353,12 +1451,11 @@ async function syncCommissionsJobNew(month = "this_month") {
     console.log(`✅ [CRON] Commissions sync completed for ${targetY}-${String(targetM+1).padStart(2,"0")} (UTC).`);
     console.log(`   - Commission records synced: ${filteredCount}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
+    if (unmatchedCommissionAgents.length) {
+      console.log(`   - Unmatched (sample):`, unmatchedCommissionAgents.slice(0, 10));
+    }
 
-    return {
-      success: true,
-      agentsUpdated,
-      commissionRecords: filteredCount,
-    };
+    return { success: true, agentsUpdated, commissionRecords: filteredCount };
   } catch (error) {
     console.error("❌ [CRON] Error syncing commissions:", error.message);
     throw error;

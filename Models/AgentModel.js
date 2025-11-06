@@ -1838,7 +1838,7 @@ const agentSchema = new mongoose.Schema(
         },
         addedDate: {
           type: Date,
-          default: Date.now,
+          default: null, // never auto-stamp; we want the source-listing moment only
         },
         lastUpdated: {
           type: Date,
@@ -1942,23 +1942,17 @@ agentSchema.methods.calculateActivePropertiesThisMonth = function () {
   }
 
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed (0 = January, 11 = December)
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth();
 
   const propertiesThisMonth = this.properties.filter((property) => {
-    // Check if property is active (Live status)
-    if (property.status !== "Live") {
-      return false;
-    }
-
-    // Check if property was added this month
-    const addedDate = new Date(property.addedDate);
+    if (property.status !== "Live") return false;
+    const d = property.addedDate ? new Date(property.addedDate) : null;
+    if (!d || Number.isNaN(d.getTime())) return false;
     return (
-      addedDate.getFullYear() === currentYear &&
-      addedDate.getMonth() === currentMonth
+      d.getUTCFullYear() === currentYear && d.getUTCMonth() === currentMonth
     );
   });
-
   return propertiesThisMonth.length;
 };
 
@@ -2130,8 +2124,15 @@ agentSchema.methods.updateLeaderboardMetrics = function (metrics = {}) {
     }
   };
 
-  ["propertiesSold","totalCommission","viewings","offers",
-   "activePropertiesThisMonth","lastDealDate","lastDealDays"].forEach(assignNum);
+  [
+    "propertiesSold",
+    "totalCommission",
+    "viewings",
+    "offers",
+    "activePropertiesThisMonth",
+    "lastDealDate",
+    "lastDealDays",
+  ].forEach(assignNum);
 
   this.set("leaderboard.lastUpdated", new Date());
   this.set("lastUpdated", new Date());
@@ -2309,33 +2310,63 @@ agentSchema.statics.getLeaderboardStats = function () {
 
 // ——— Property management methods ———
 agentSchema.methods.addOrUpdateProperty = function (propertyData) {
-  if (!this.properties) {
-    this.properties = [];
-  }
+  if (!this.properties) this.properties = [];
 
-  const existingPropertyIndex = this.properties.findIndex(
+  const now = new Date();
+  const idx = this.properties.findIndex(
     (p) => p.propertyId === propertyData.propertyId
   );
 
-  if (existingPropertyIndex > -1) {
-    this.properties[existingPropertyIndex] = {
-      ...this.properties[existingPropertyIndex].toObject(),
+  const incomingAdded = propertyData.addedDate || null; // parsed UTC date from XML
+  const incomingAddedStr = propertyData.addedDateString || null;
+
+  if (idx > -1) {
+    // UPDATE
+    const current = this.properties[idx];
+    const currentObj =
+      typeof current.toObject === "function" ? current.toObject() : current;
+
+    // Decide the correct addedDate:
+    // 1) If current is missing, take incoming.
+    // 2) If both exist and current > incoming (i.e., was set to "now"), replace with incoming (source truth).
+    // 3) Otherwise keep current.
+    let correctedAdded = currentObj.addedDate || incomingAdded || null;
+    if (
+      currentObj.addedDate &&
+      incomingAdded &&
+      currentObj.addedDate > incomingAdded
+    ) {
+      correctedAdded = incomingAdded;
+    }
+
+    this.properties[idx] = {
+      ...currentObj,
       ...propertyData,
-      lastUpdated: new Date(),
+      addedDate: correctedAdded,
+      addedDateString: currentObj.addedDateString || incomingAddedStr || null,
+      lastUpdated: propertyData.lastUpdated || now,
     };
   } else {
+    // CREATE — never fall back to now; if the source is missing we keep null
     this.properties.push({
       ...propertyData,
-      addedDate: new Date(),
-      lastUpdated: new Date(),
+      addedDate: incomingAdded || null,
+      addedDateString: incomingAddedStr || null,
+      lastUpdated: propertyData.lastUpdated || now,
     });
   }
 
-  this.activeSaleListings = this.properties.filter(
-    (p) => p.listingType === "Sale" && p.status !== "Off Market"
+  // Recompute active Sale listings
+  this.activeSaleListings = (this.properties || []).filter(
+    (p) =>
+      p?.listingType === "Sale" &&
+      String(p?.status || "").toLowerCase() !== "off market"
   ).length;
 
-  this.lastUpdated = new Date();
+  this.leaderboard = this.leaderboard || {};
+  this.leaderboard.lastUpdated = now;
+  this.lastUpdated = now;
+
   return this;
 };
 
