@@ -1138,7 +1138,7 @@ function setupCronJobs() {
 
   // ✅ Main sync job - every 15 minutes, pinned to UTC
   cron.schedule(
-    "*/15 * * * *",
+    "*/30 * * * *",
     async () => {
       await runAllSyncs(); // already mutex-protected
     },
