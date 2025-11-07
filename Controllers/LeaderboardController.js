@@ -109,12 +109,11 @@ function resolveMonthUTC(monthParam = "this_month") {
 }
 
 function isSameUtcMonth(dateString, targetY, targetM) {
-  if (!dateString) return false;
-  const t = Date.parse(dateString);
-  if (Number.isNaN(t)) return false;
-  const { y, m } = getUtcYearMonth(t);
+  const t = Date.parse(dateString);     // 👈 if string lacks timezone, this is LOCAL time
+  const { y, m } = getUtcYearMonth(t);  // then you read UTC → can shift months
   return y === targetY && m === targetM;
 }
+
 //
 
 // CRON FUNCTIONS
