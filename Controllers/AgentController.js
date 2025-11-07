@@ -9,8 +9,6 @@ const clampInt = (v, def = 0) => {
   return Number.isFinite(n) ? n : def;
 };
 
-
-
 const createAgent = async (req, res) => {
   try {
     // ✅ CLOUDINARY: Get the full Cloudinary URL from uploaded file
@@ -103,7 +101,6 @@ const getAgents = async (req, res) => {
   }
 };
 
-
 const getAgentById = async (req, res) => {
   try {
     const agent = await Agent.findOne({ agentId: req.query.agentId });
@@ -115,11 +112,13 @@ const getAgentById = async (req, res) => {
   }
 };
 
+// Agent k email ajaty h jesy single property page khulta hai
 const getAgentByEmail = async (req, res) => {
   try {
     const agent = await Agent.findOne({ email: req.query.email });
-    if (!agent)
+    if (!agent) {
       return res.status(404).json({ success: false, error: "Agent not found" });
+    }
     return res.status(200).json({ success: true, data: agent });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -380,5 +379,4 @@ module.exports = {
   updateAgent,
   getAgentsBySequence,
   deleteAgent,
-
 };
