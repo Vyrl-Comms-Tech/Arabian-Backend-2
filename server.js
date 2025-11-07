@@ -55,9 +55,9 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 });
 
-// Agents with salesforce sync cron job
-setupCronJobs();
-schedulePropertySync();
+// Agents with salesforce sync cron job (CRON JOBS)
+// setupCronJobs();
+// schedulePropertySync();
 
 // Then mount your API routes
 app.use("/", router);
