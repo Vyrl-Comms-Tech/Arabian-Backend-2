@@ -16,6 +16,7 @@ const News = require("../Controllers/NewsController");
 const CommunityGuides = require("../Controllers/CommunityGuideController");
 const Podcast = require("../Controllers/PodcastController");
 const HeroController = require("../Controllers/HeroContentController");
+const LeaderboardController = require("../Controllers/LeaderboardController");
 //
 
 const cloudinary = require('cloudinary').v2;
@@ -235,16 +236,16 @@ router.get("/delete-agent", AgentController.deleteAgent);
 
 
 // Leaderboard Agent Endpoints for CRONS
-router.get("/GetAgentDeals", AgentController.syncAgentDealsFromSalesforce);
-router.get("/GetAgentCommissions", AgentController.syncAgentCommissionsFromSalesforce);
-router.get("/GetAgentViewings", AgentController.syncAgentViewingsFromSalesforce);
-// router.get("/GetAgentOffers", AgentController.syncAgentOffersFromSalesforce);
-router.post("/SaleforceAuthToken",AgentController.getSalesforceToken)
-router.get("/getLeaderboardAgents",AgentController.getLeaderboardAgents)
+router.get("/GetAgentDeals", LeaderboardController.syncAgentDealsFromSalesforce);
+router.get("/GetAgentCommissions", LeaderboardController.syncAgentCommissionsFromSalesforce);
+router.get("/GetAgentViewings", LeaderboardController.syncAgentViewingsFromSalesforce);
+// router.get("/GetAgentOffers", LeaderboardController.syncAgentOffersFromSalesforce);
+router.post("/SaleforceAuthToken",LeaderboardController.getSalesforceToken)
+router.get("/getLeaderboardAgents",LeaderboardController.getLeaderboardAgents)
 
 
 // Manual Testing
-router.post("/ManualSaleforceAuthToken",AgentController.GetSalesForceToken)
+router.post("/ManualSaleforceAuthToken",LeaderboardController.GetSalesForceToken)
 
 
 

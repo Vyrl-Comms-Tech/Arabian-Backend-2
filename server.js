@@ -1,7 +1,7 @@
 // Near the top with other requires
 require('./Config/redis.js'); // Initialize Redis connection
 require('dotenv').config();
-const { setupCronJobs } = require("./Controllers/AgentController.js");
+const { setupCronJobs } = require("./Controllers/LeaderboardController.js");
 const { schedulePropertySync} = require("./Controllers/XmlParser.js");
 const express = require('express');
 const app = express();
