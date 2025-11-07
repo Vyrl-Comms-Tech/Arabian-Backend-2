@@ -235,11 +235,11 @@ router.get("/AgentByEmail", AgentController.getAgentByEmail);
 router.get("/delete-agent", AgentController.deleteAgent);
 
 
-// Leaderboard Agent Endpoints for CRONS
+// Leaderboard Routes
 router.get("/GetAgentDeals", LeaderboardController.syncAgentDealsFromSalesforce);
 router.get("/GetAgentCommissions", LeaderboardController.syncAgentCommissionsFromSalesforce);
 router.get("/GetAgentViewings", LeaderboardController.syncAgentViewingsFromSalesforce);
-// router.get("/GetAgentOffers", LeaderboardController.syncAgentOffersFromSalesforce);
+router.get("/UpdateMonthlyProperty", LeaderboardController.updateMonthlyPropertiesForAllAgents);
 router.post("/SaleforceAuthToken",LeaderboardController.getSalesforceToken)
 router.get("/getLeaderboardAgents",LeaderboardController.getLeaderboardAgents)
 
