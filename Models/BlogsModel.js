@@ -1082,6 +1082,7 @@ blogSchema.statics.parseTextToBlogStructure = function (textContent) {
     seo: { metaTitle, metaDescription, keywords: tags.slice(0, 5) },
     status: "draft",
   };
+  
 };
 
 module.exports = mongoose.models.Blog || mongoose.model("Blog", blogSchema);

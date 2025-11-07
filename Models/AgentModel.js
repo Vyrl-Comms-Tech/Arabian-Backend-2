@@ -1865,16 +1865,7 @@ const agentSchema = new mongoose.Schema(
           trim: true,
         },
         // Image field for blog
-        image: {
-          filename: {
-            type: String,
-            required: [true, "Image filename is required"],
-          },
-          originalName: String,
-          mimetype: String,
-          size: Number,
-          path: String,
-        },
+        imageUrl: { type: String, trim: true, default: null },
         isPublished: {
           type: Boolean,
           default: false,
@@ -2402,7 +2393,8 @@ agentSchema.methods.addOrUpdateBlog = function (blogData) {
     this.blogs[existingBlogIndex].blogId = blogData.blogId;
     this.blogs[existingBlogIndex].title = blogData.title;
     this.blogs[existingBlogIndex].slug = blogData.slug;
-    this.blogs[existingBlogIndex].image = blogData.image;
+    this.blogs[existingBlogIndex].imageUrl = blogData.imageUrl || null;
+
     this.blogs[existingBlogIndex].isPublished = blogData.isPublished;
     this.blogs[existingBlogIndex].publishedAt = blogData.publishedAt;
     this.blogs[existingBlogIndex].createdAt =
@@ -2418,7 +2410,7 @@ agentSchema.methods.addOrUpdateBlog = function (blogData) {
       blogId: blogData.blogId,
       title: blogData.title,
       slug: blogData.slug,
-      image: blogData.image,
+      imageUrl: blogData.imageUrl || null,
       isPublished: blogData.isPublished,
       publishedAt: blogData.publishedAt,
       createdAt: blogData.createdAt || new Date(),

@@ -2550,6 +2550,12 @@ function amountNumber(raw) {
   return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
 }
 
+function twoAgentNamesOnly(deal) {
+  const names = [];
+  if (deal.deal_agent) names.push(deal.deal_agent.trim());
+  if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+  return names.filter(Boolean);
+}
 async function syncCommissionsJobNew() {
   const nowUTC = new Date();
   const targetY = nowUTC.getUTCFullYear();

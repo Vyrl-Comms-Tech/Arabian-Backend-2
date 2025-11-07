@@ -62,7 +62,7 @@
 // // Helper function to create image data object
 // const createImageData = (file) => {
 //   if (!file) return null;
-  
+
 //   return {
 //     filename: file.filename,
 //     originalName: file.originalname,
@@ -75,7 +75,7 @@
 // // Helper function to delete file safely
 // const deleteFileSafely = async (filePath) => {
 //   if (!filePath) return;
-  
+
 //   try {
 //     if (fsSync.existsSync(filePath)) {
 //       await fs.unlink(filePath);
@@ -239,12 +239,12 @@
 //     }
 
 //     // ✅ Handle body images upload
-//     const bodyImage1Data = 
+//     const bodyImage1Data =
 //       req.files && req.files.bodyImage1 && req.files.bodyImage1[0]
 //         ? createImageData(req.files.bodyImage1[0])
 //         : null;
 
-//     const bodyImage2Data = 
+//     const bodyImage2Data =
 //       req.files && req.files.bodyImage2 && req.files.bodyImage2[0]
 //         ? createImageData(req.files.bodyImage2[0])
 //         : null;
@@ -588,7 +588,7 @@
 //       console.log("Body image 1 removed");
 //     } else if (req.files && req.files.bodyImage1 && req.files.bodyImage1[0]) {
 //       console.log("Updating body image 1...");
-      
+
 //       // Delete old body image 1 if it exists
 //       if (blog.bodyImages?.image1?.path) {
 //         await deleteFileSafely(blog.bodyImages.image1.path);
@@ -611,7 +611,7 @@
 //       console.log("Body image 2 removed");
 //     } else if (req.files && req.files.bodyImage2 && req.files.bodyImage2[0]) {
 //       console.log("Updating body image 2...");
-      
+
 //       // Delete old body image 2 if it exists
 //       if (blog.bodyImages?.image2?.path) {
 //         await deleteFileSafely(blog.bodyImages.image2.path);
@@ -697,8 +697,8 @@
 
 //     res.status(200).json({
 //       success: true,
-//       message: agentChanged 
-//         ? "Blog updated and reassigned to new agent successfully" 
+//       message: agentChanged
+//         ? "Blog updated and reassigned to new agent successfully"
 //         : "Blog updated successfully",
 //       data: {
 //         blog: blog,
@@ -836,7 +836,7 @@
 //       .limit(parseInt(limit));
 
 //     const blogsWithScore = blogs.map(blog => {
-//       const matchingTags = blog.metadata.tags.filter(tag => 
+//       const matchingTags = blog.metadata.tags.filter(tag =>
 //         tagsArray.includes(tag.toLowerCase())
 //       );
 //       return {
@@ -1071,7 +1071,6 @@
 //   upload,
 // };
 
-
 // controllers/BlogsController.js
 const Blog = require("../Models/BlogsModel");
 const Agent = require("../Models/AgentModel");
@@ -1080,6 +1079,21 @@ const cloudinary = require("cloudinary").v2;
 const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
+function ensureFilename(img) {
+  if (!img) return img;
+  if (img.filename) return img;
+  // try best-effort fallback
+  const fromPublicId = img.publicId || img.public_id;
+  if (fromPublicId) return { ...img, filename: fromPublicId };
+  // last resort: derive from URL (public_id without extension)
+  if (img.url) {
+    const base = img.url.split("/").pop() || "";
+    const noQuery = base.split("?")[0];
+    const noExt = noQuery.replace(/\.[a-z0-9]+$/i, "");
+    return { ...img, filename: noExt || "unknown" };
+  }
+  return { ...img, filename: "unknown" };
+}
 // ---------- Cloudinary Multer Storage (multi-field) ----------
 const ALLOWED_EXT = ["jpg", "jpeg", "png", "webp", "gif"];
 const fileFilter = (_req, file, cb) => {
@@ -1100,7 +1114,9 @@ const storage = new CloudinaryStorage({
         .replace(/\.[a-z0-9]+$/, "")
         .replace(/[^\w]+/g, "-")
         .slice(0, 50) || "image";
-    const public_id = `${Date.now()}-${Math.round(Math.random() * 1e6)}-${base}`;
+    const public_id = `${Date.now()}-${Math.round(
+      Math.random() * 1e6
+    )}-${base}`;
     return {
       folder,
       public_id,
@@ -1125,11 +1141,10 @@ const upload = multer({
 // ---------- Helpers ----------
 const createImageData = (file) => {
   if (!file) return null;
-  // Multer-Cloudinary fields:
-  // file.path => secure URL, file.filename => public_id, file.format, file.size (bytes), file.width, file.height, file.folder
   return {
     url: file.path,
-    publicId: file.filename,
+    publicId: file.filename, // existing
+    filename: file.filename, // <-- add this line (required by Agent schema)
     format: file.format,
     bytes: file.size,
     width: file.width,
@@ -1156,10 +1171,14 @@ const createBlog = async (req, res) => {
     const { parsedData, agentId } = req.body;
 
     if (!parsedData) {
-      return res.status(400).json({ success: false, message: "parsedData is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "parsedData is required" });
     }
     if (!agentId) {
-      return res.status(400).json({ success: false, message: "agentId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "agentId is required" });
     }
 
     // Parse parsedData (JSON or plain text → Blog.parseTextToBlogStructure)
@@ -1201,19 +1220,26 @@ const createBlog = async (req, res) => {
     // Validate agent
     const agent = await Agent.findOne({ agentId });
     if (!agent) {
-      return res.status(404).json({ success: false, message: "Agent not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Agent not found" });
     }
     if (!agent.isActive) {
-      return res.status(400).json({ success: false, message: "Agent is not active" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Agent is not active" });
     }
 
     // Handle images (Cloudinary URLs now)
-    const coverImageData =
-      req.files?.coverImage?.[0] ? createImageData(req.files.coverImage[0]) : null;
-    const bodyImage1Data =
-      req.files?.bodyImage1?.[0] ? createImageData(req.files.bodyImage1[0]) : null;
-    const bodyImage2Data =
-      req.files?.bodyImage2?.[0] ? createImageData(req.files.bodyImage2[0]) : null;
+    const coverImageData = req.files?.coverImage?.[0]
+      ? createImageData(req.files.coverImage[0])
+      : null;
+    const bodyImage1Data = req.files?.bodyImage1?.[0]
+      ? createImageData(req.files.bodyImage1[0])
+      : null;
+    const bodyImage2Data = req.files?.bodyImage2?.[0]
+      ? createImageData(req.files.bodyImage2[0])
+      : null;
 
     // Create blog doc
     const newBlog = new Blog({
@@ -1222,7 +1248,8 @@ const createBlog = async (req, res) => {
         `blog_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       metadata: {
         title: blogData.metadata?.title || blogData.content.title,
-        description: blogData.metadata?.description || blogData.seo?.metaDescription || "",
+        description:
+          blogData.metadata?.description || blogData.seo?.metaDescription || "",
         author: blogData.metadata?.author || agent.agentName,
         tags: blogData.metadata?.tags || [],
         category: blogData.metadata?.category || "",
@@ -1263,7 +1290,7 @@ const createBlog = async (req, res) => {
           blogId: savedBlog._id,
           title: savedBlog.content.title,
           slug: savedBlog.metadata.slug,
-          image: savedBlog.image,
+          imageUrl: pickImageUrl(savedBlog.image),
           isPublished: savedBlog.isPublished,
           publishedAt: savedBlog.publishedAt,
           createdAt: savedBlog.createdAt,
@@ -1303,14 +1330,19 @@ const createBlog = async (req, res) => {
 // ---------- UPDATE ----------
 const updateBlog = async (req, res) => {
   try {
-    const { blogId, parsedData, agentId, removeBodyImage1, removeBodyImage2 } = req.body;
+    const { blogId, parsedData, agentId, removeBodyImage1, removeBodyImage2 } =
+      req.body;
     if (!blogId) {
-      return res.status(400).json({ success: false, message: "blogId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "blogId is required" });
     }
 
     const blog = await Blog.findById(blogId);
     if (!blog) {
-      return res.status(404).json({ success: false, message: "Blog not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Blog not found" });
     }
 
     // Agent reassignment
@@ -1319,10 +1351,14 @@ const updateBlog = async (req, res) => {
     if (agentId && agentId !== oldAgentId) {
       const newAgent = await Agent.findOne({ agentId });
       if (!newAgent) {
-        return res.status(404).json({ success: false, message: "New agent not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "New agent not found" });
       }
       if (!newAgent.isActive) {
-        return res.status(400).json({ success: false, message: "New agent is not active" });
+        return res
+          .status(400)
+          .json({ success: false, message: "New agent is not active" });
       }
       blog.author.agentId = newAgent.agentId;
       blog.author.agentName = newAgent.agentName;
@@ -1356,9 +1392,11 @@ const updateBlog = async (req, res) => {
       if (updateData.metadata) {
         const m = updateData.metadata;
         if (m.title !== undefined) blog.metadata.title = m.title;
-        if (m.description !== undefined) blog.metadata.description = m.description;
+        if (m.description !== undefined)
+          blog.metadata.description = m.description;
         if (m.author !== undefined) blog.metadata.author = m.author;
-        if (m.tags !== undefined) blog.metadata.tags = Array.isArray(m.tags) ? m.tags : [];
+        if (m.tags !== undefined)
+          blog.metadata.tags = Array.isArray(m.tags) ? m.tags : [];
         if (m.category !== undefined) blog.metadata.category = m.category;
         if (m.slug !== undefined) blog.metadata.slug = m.slug;
       }
@@ -1368,14 +1406,17 @@ const updateBlog = async (req, res) => {
         if (c.title !== undefined) blog.content.title = c.title;
         if (Array.isArray(c.sections)) blog.content.sections = c.sections;
         if (c.wordCount !== undefined) blog.content.wordCount = c.wordCount;
-        if (c.readingTime !== undefined) blog.content.readingTime = c.readingTime;
+        if (c.readingTime !== undefined)
+          blog.content.readingTime = c.readingTime;
       }
       // seo
       if (updateData.seo) {
         const s = updateData.seo;
         if (s.metaTitle !== undefined) blog.seo.metaTitle = s.metaTitle;
-        if (s.metaDescription !== undefined) blog.seo.metaDescription = s.metaDescription;
-        if (s.keywords !== undefined) blog.seo.keywords = Array.isArray(s.keywords) ? s.keywords : [];
+        if (s.metaDescription !== undefined)
+          blog.seo.metaDescription = s.metaDescription;
+        if (s.keywords !== undefined)
+          blog.seo.keywords = Array.isArray(s.keywords) ? s.keywords : [];
       }
       // status
       if (updateData.status) {
@@ -1397,21 +1438,25 @@ const updateBlog = async (req, res) => {
     }
 
     if (removeBodyImage1 === "true" || removeBodyImage1 === true) {
-      if (blog.bodyImages?.image1?.publicId) await destroyPublicId(blog.bodyImages.image1.publicId);
+      if (blog.bodyImages?.image1?.publicId)
+        await destroyPublicId(blog.bodyImages.image1.publicId);
       if (!blog.bodyImages) blog.bodyImages = {};
       blog.bodyImages.image1 = null;
     } else if (req.files?.bodyImage1?.[0]) {
-      if (blog.bodyImages?.image1?.publicId) await destroyPublicId(blog.bodyImages.image1.publicId);
+      if (blog.bodyImages?.image1?.publicId)
+        await destroyPublicId(blog.bodyImages.image1.publicId);
       if (!blog.bodyImages) blog.bodyImages = {};
       blog.bodyImages.image1 = createImageData(req.files.bodyImage1[0]);
     }
 
     if (removeBodyImage2 === "true" || removeBodyImage2 === true) {
-      if (blog.bodyImages?.image2?.publicId) await destroyPublicId(blog.bodyImages.image2.publicId);
+      if (blog.bodyImages?.image2?.publicId)
+        await destroyPublicId(blog.bodyImages.image2.publicId);
       if (!blog.bodyImages) blog.bodyImages = {};
       blog.bodyImages.image2 = null;
     } else if (req.files?.bodyImage2?.[0]) {
-      if (blog.bodyImages?.image2?.publicId) await destroyPublicId(blog.bodyImages.image2.publicId);
+      if (blog.bodyImages?.image2?.publicId)
+        await destroyPublicId(blog.bodyImages.image2.publicId);
       if (!blog.bodyImages) blog.bodyImages = {};
       blog.bodyImages.image2 = createImageData(req.files.bodyImage2[0]);
     }
@@ -1423,13 +1468,12 @@ const updateBlog = async (req, res) => {
       blogId: blog._id,
       title: blog.content?.title || blog.metadata?.title || "Untitled",
       slug: blog.metadata?.slug || "",
-      image: blog.image,
+      imageUrl: pickImageUrl(blog.image),
       isPublished: blog.isPublished || false,
       publishedAt: blog.publishedAt || null,
       createdAt: blog.createdAt,
       updatedAt: blog.updatedAt,
     };
-
     if (agentChanged) {
       try {
         const oldAgent = await Agent.findOne({ agentId: oldAgentId });
@@ -1453,7 +1497,9 @@ const updateBlog = async (req, res) => {
       }
     } else {
       try {
-        const currentAgent = await Agent.findOne({ agentId: blog.author.agentId });
+        const currentAgent = await Agent.findOne({
+          agentId: blog.author.agentId,
+        });
         if (currentAgent?.addOrUpdateBlog) {
           currentAgent.addOrUpdateBlog(blogForAgent);
           await currentAgent.save({ validateBeforeSave: false });
@@ -1502,7 +1548,11 @@ const GetAllBlogs = async (_req, res) => {
     });
   } catch (error) {
     console.error("GetAllBlogs error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch blogs", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch blogs",
+      error: error.message,
+    });
   }
 };
 
@@ -1510,7 +1560,9 @@ const getSingleBlog = async (req, res) => {
   try {
     const blogId = req.query.id;
     if (!blogId) {
-      return res.status(400).json({ success: false, message: "Blog ID is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Blog ID is required" });
     }
 
     const blog = await Blog.findById(blogId).populate(
@@ -1518,12 +1570,23 @@ const getSingleBlog = async (req, res) => {
       "agentName email imageUrl designation specialistAreas phone whatsapp description"
     );
 
-    if (!blog) return res.status(404).json({ success: false, message: "Blog not found" });
+    if (!blog)
+      return res
+        .status(404)
+        .json({ success: false, message: "Blog not found" });
 
-    res.status(200).json({ success: true, message: "Blog fetched successfully", data: blog });
+    res.status(200).json({
+      success: true,
+      message: "Blog fetched successfully",
+      data: blog,
+    });
   } catch (error) {
     console.error("getSingleBlog error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch blog", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch blog",
+      error: error.message,
+    });
   }
 };
 
@@ -1555,7 +1618,11 @@ const getBlogsByTags = async (req, res) => {
         const matchingTags = (b.metadata.tags || []).filter((t) =>
           tagsArray.includes(String(t).toLowerCase())
         );
-        return { ...b.toObject(), matchScore: matchingTags.length, matchingTags };
+        return {
+          ...b.toObject(),
+          matchScore: matchingTags.length,
+          matchingTags,
+        };
       })
       .sort((a, b) => b.matchScore - a.matchScore);
 
@@ -1568,7 +1635,11 @@ const getBlogsByTags = async (req, res) => {
     });
   } catch (error) {
     console.error("getBlogsByTags error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch blogs by tags", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch blogs by tags",
+      error: error.message,
+    });
   }
 };
 
@@ -1577,11 +1648,16 @@ const deleteBlog = async (req, res) => {
   try {
     const blogId = req.query.id || req.body.id;
     if (!blogId) {
-      return res.status(400).json({ success: false, message: "Blog ID is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Blog ID is required" });
     }
 
     const blog = await Blog.findById(blogId);
-    if (!blog) return res.status(404).json({ success: false, message: "Blog not found" });
+    if (!blog)
+      return res
+        .status(404)
+        .json({ success: false, message: "Blog not found" });
 
     // Remove from agent.blogs
     try {
@@ -1596,8 +1672,10 @@ const deleteBlog = async (req, res) => {
 
     // Destroy Cloudinary images
     if (blog.image?.publicId) await destroyPublicId(blog.image.publicId);
-    if (blog.bodyImages?.image1?.publicId) await destroyPublicId(blog.bodyImages.image1.publicId);
-    if (blog.bodyImages?.image2?.publicId) await destroyPublicId(blog.bodyImages.image2.publicId);
+    if (blog.bodyImages?.image1?.publicId)
+      await destroyPublicId(blog.bodyImages.image1.publicId);
+    if (blog.bodyImages?.image2?.publicId)
+      await destroyPublicId(blog.bodyImages.image2.publicId);
 
     await Blog.findByIdAndDelete(blogId);
 
@@ -1607,7 +1685,11 @@ const deleteBlog = async (req, res) => {
     });
   } catch (error) {
     console.error("deleteBlog error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to delete blog", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete blog",
+      error: error.message,
+    });
   }
 };
 
@@ -1617,7 +1699,10 @@ const getBlogsByAgent = async (req, res) => {
     const { agentId } = req.params;
     const { published, page = 1, limit = 10 } = req.query;
 
-    if (!agentId) return res.status(400).json({ success: false, message: "Agent ID is required" });
+    if (!agentId)
+      return res
+        .status(400)
+        .json({ success: false, message: "Agent ID is required" });
 
     const filter = { "author.agentId": agentId };
     if (published !== undefined) filter.isPublished = published === "true";
@@ -1649,7 +1734,11 @@ const getBlogsByAgent = async (req, res) => {
     });
   } catch (error) {
     console.error("getBlogsByAgent error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch agent blogs", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch agent blogs",
+      error: error.message,
+    });
   }
 };
 
@@ -1657,7 +1746,9 @@ const getBlogsByAgent = async (req, res) => {
 const getAgentsWithBlogs = async (req, res) => {
   try {
     const { limit = 20 } = req.query;
-    const agentsWithBlogs = await Agent.findAgentsWithBlogs(parseInt(limit, 10));
+    const agentsWithBlogs = await Agent.findAgentsWithBlogs(
+      parseInt(limit, 10)
+    );
     res.status(200).json({
       success: true,
       message: "Agents with blogs fetched successfully",
@@ -1665,7 +1756,11 @@ const getAgentsWithBlogs = async (req, res) => {
     });
   } catch (error) {
     console.error("getAgentsWithBlogs error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to fetch agents with blogs", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch agents with blogs",
+      error: error.message,
+    });
   }
 };
 
@@ -1674,12 +1769,21 @@ const toggleBlogPublishStatus = async (req, res) => {
   try {
     const { blogId } = req.params;
     const { publish } = req.body;
-    if (!blogId) return res.status(400).json({ success: false, message: "Blog ID is required" });
+    if (!blogId)
+      return res
+        .status(400)
+        .json({ success: false, message: "Blog ID is required" });
 
     const blog = await Blog.findById(blogId);
-    if (!blog) return res.status(404).json({ success: false, message: "Blog not found" });
+    if (!blog)
+      return res
+        .status(404)
+        .json({ success: false, message: "Blog not found" });
 
-    const result = (publish === true || publish === "true") ? await blog.publish() : await blog.unpublish();
+    const result =
+      publish === true || publish === "true"
+        ? await blog.publish()
+        : await blog.unpublish();
 
     try {
       const agent = await Agent.findOne({ agentId: blog.author.agentId });
@@ -1704,7 +1808,11 @@ const toggleBlogPublishStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("toggleBlogPublishStatus error:", error.message);
-    res.status(500).json({ success: false, message: "Failed to toggle blog publish status", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Failed to toggle blog publish status",
+      error: error.message,
+    });
   }
 };
 
