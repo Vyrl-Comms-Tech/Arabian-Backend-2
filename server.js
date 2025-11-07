@@ -56,8 +56,8 @@ const upload = multer({
 });
 
 // Agents with salesforce sync cron job (CRON JOBS)
-// setupCronJobs();
-// schedulePropertySync();
+setupCronJobs();
+schedulePropertySync();
 
 // Then mount your API routes
 app.use("/", router);

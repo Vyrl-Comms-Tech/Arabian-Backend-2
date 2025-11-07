@@ -2128,11 +2128,7 @@
 const axios = require("axios");
 const Agent = require("../Models/AgentModel");
 const cron = require("node-cron");
-
-/** ───────────────────────────────────────────────────────────────────────────
- *  Concurrency guard (in-process)
- *  NOTE: For multi-instance deployments, use a distributed lock (Mongo/Redis).
- *  ─────────────────────────────────────────────────────────────────────────── */
+ 
 let masterSyncRunning = false;
 async function runAllSyncsLocked(fnName, fn) {
   if (masterSyncRunning) {
