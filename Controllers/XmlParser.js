@@ -927,22 +927,68 @@ const parseXmlFromUrl = async (req, res, next) => {
 
 
 // Cron job for every 2 hour
-const schedulePropertySync = () => {
-  // Cron expression: '0 */2 * * *' means every 2 hours at minute 0
-  cron.schedule('0 */2 * * *', async () => {
-    console.log(`🔄 [${new Date().toISOString()}] Starting scheduled property sync...`);
+// const schedulePropertySync = () => {
+//   // Cron expression: '0 */2 * * *' means every 2 hours at minute 0
+//   cron.schedule('0 */2 * * *', async () => {
+//     console.log(`🔄 [${new Date().toISOString()}] Starting scheduled property sync...`);
     
-    try {
-      // Call your endpoint internally
-      const response = await axios.get('http://localhost:YOUR_PORT/api/parse-xml');
+//     try {
+//       const response = await axios.get('http://localhost:YOUR_PORT/api/parse-xml');
       
-      console.log(`✅ [${new Date().toISOString()}] Property sync completed:`, response.data);
+//       console.log(`✅ [${new Date().toISOString()}] Property sync completed:`, response.data);
+//     } catch (error) {
+//       console.error(`❌ [${new Date().toISOString()}] Property sync failed:`, error.message);
+//     }
+//   });
+
+//   console.log('⏰ Property sync scheduler initialized - Running every 2 hours');
+// };
+
+// Cron job for every 2 hours — call controller directly (no HTTP call)
+const schedulePropertySync = () => {
+  // optional: run in UTC so logs are predictable
+  const TZ = process.env.CRON_TZ || 'Etc/UTC';
+
+  cron.schedule('0 */2 * * *', async () => {
+    const startedAt = new Date().toISOString();
+    console.log(`🔄 [${startedAt}] Starting scheduled property sync...`);
+
+    // Minimal fake req/res to reuse the same controller
+    const fakeReq = {}; // no params needed by parseXmlFromUrl
+    const fakeRes = {
+      _status: 200,
+      status(code) {
+        this._status = code;
+        return this;
+      },
+      json(payload) {
+        // Log a compact summary so logs don’t explode
+        try {
+          const summary = {
+            success: payload?.success,
+            totalPropertiesInXml: payload?.totalPropertiesInXml,
+            processedProperties: payload?.processedProperties,
+            liveProperties: payload?.liveProperties,
+            nonLiveProperties: payload?.nonLiveProperties,
+            skippedProperties: payload?.skippedProperties,
+          };
+          console.log(`✅ [${new Date().toISOString()}] Property sync completed:`, summary);
+        } catch (e) {
+          console.log(`✅ [${new Date().toISOString()}] Property sync completed.`);
+        }
+        return payload; // keep behavior similar to Express
+      }
+    };
+
+    try {
+      await parseXmlFromUrl(fakeReq, fakeRes);
     } catch (error) {
       console.error(`❌ [${new Date().toISOString()}] Property sync failed:`, error.message);
     }
-  });
+  }, { timezone: TZ });
 
   console.log('⏰ Property sync scheduler initialized - Running every 2 hours');
 };
+
 
 module.exports = {parseXmlFromUrl, schedulePropertySync};
