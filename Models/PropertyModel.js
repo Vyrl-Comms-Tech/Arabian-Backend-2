@@ -677,7 +677,7 @@ const GeneralListingInformationSchema = new mongoose.Schema({
   },
   listingtype: {
     type: String,
-    enum: ['Sale', 'Rent', 'OffPlan', 'Commercial']
+    // enum: ['Sale', 'Rent', 'OffPlan', 'Commercial']
   },
   property: String,
   property_type: String,
