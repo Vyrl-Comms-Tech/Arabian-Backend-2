@@ -1766,7 +1766,7 @@ const agentSchema = new mongoose.Schema(
         },
         listingType: {
           type: String,
-          enum: ["Sale", "Rent", "Off Plan"],
+          // enum: ["Sale", "Rent", "Off Plan"],
           required: true,
         },
         propertyType: {

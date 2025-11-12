@@ -783,7 +783,7 @@ const PropertySchema = new mongoose.Schema({
     type: String, 
     required: true,
     unique: true,
-    index: true  // ✅ INDEXED for fast lookups
+    // index: true  // ✅ INDEXED for fast lookups
   },
   
   // Base level fields for indexing
@@ -791,13 +791,13 @@ const PropertySchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: ['RS', 'RR', 'CS', 'CR'], // Sale, Rent, Commercial Sale, Commercial Rent
-    index: true
+    // index: true
   },
   property_type: {
     type: String,
     required: true,
     default: 'apartment',
-    index: true
+    // index: true
   },
   
   address_information: {
@@ -837,26 +837,7 @@ const PropertySchema = new mongoose.Schema({
 // ✅ INDEXES - Optimized for common queries
 PropertySchema.index({ id: 1 }); // Primary lookup by property ID
 PropertySchema.index({ offering_type: 1, property_type: 1 }); // Compound index for listing
-PropertySchema.index({ 'general_listing_information.status': 1 }); // Status filtering
-PropertySchema.index({ 'general_listing_information.listingtype': 1 }); // Listing type filtering
-PropertySchema.index({ 'custom_fields.community': 1 }); // Community searches
-PropertySchema.index({ 'custom_fields.developer': 1 }); // Developer searches
-PropertySchema.index({ 'custom_fields.completion_status': 1 }); // Completion status
-PropertySchema.index({ 'listing_agent.listing_agent_email': 1 }); // Agent lookups
-PropertySchema.index({ 'general_listing_information.updated': 1 }); // Update flag queries
 
-// Compound indexes for complex queries
-PropertySchema.index({ 
-  offering_type: 1, 
-  'general_listing_information.status': 1 
-});
-
-PropertySchema.index({ 
-  'custom_fields.community': 1, 
-  offering_type: 1 
-});
-
-// Instance Methods
 PropertySchema.methods.getFormattedPrice = function() {
   if (!this.general_listing_information.listingprice) return 'Price on request';
   
