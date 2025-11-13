@@ -2125,10 +2125,1511 @@
 
 // salesforceSyncController.fixed.js
 /* eslint-disable no-console */
+
+
+// For Speed
+// const axios = require("axios");
+// const Agent = require("../Models/AgentModel");
+// const cron = require("node-cron");
+ 
+// let masterSyncRunning = false;
+// async function runAllSyncsLocked(fnName, fn) {
+//   if (masterSyncRunning) {
+//     console.log(`⏳ [SYNC LOCK] ${fnName} skipped; another sync is running.`);
+//     return { skipped: true };
+//   }
+//   masterSyncRunning = true;
+//   try {
+//     return await fn();
+//   } finally {
+//     masterSyncRunning = false;
+//   }
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Name normalization
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// function normalizeAgentName(name) {
+//   if (!name) return "";
+//   return String(name)
+//     .normalize("NFKD") // strip diacritics where possible
+//     .replace(/[\u0300-\u036f]/g, "")
+//     .toLowerCase()
+//     .trim()
+//     .replace(/\s+/g, " ")
+//     .replace(/[^\w\s]/g, "");
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Salesforce / HTTP
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// const SALESFORCE = {
+//   tokenUrl: process.env.SALESFORCE_TOKEN_URL,
+//   baseUrl: "https://arabianestates.my.salesforce.com",
+//   clientId: process.env.SALESFORCE_CLIENT_ID,
+//   clientSecret: process.env.SALESFORCE_CLIENT_SECRET,
+//   username: process.env.SALESFORCE_USERNAME,
+//   password: process.env.SALESFORCE_PASSWORD,
+// };
+
+// const axiosSF = axios.create({
+//   baseURL: SALESFORCE.baseUrl,
+//   timeout: 30_000,
+//   headers: { Accept: "application/json", "Content-Type": "application/json" },
+// });
+
+// // Simple retry helper for transient errors
+// async function withRetry(fn, { retries = 2, delayMs = 600 } = {}) {
+//   let lastErr;
+//   for (let i = 0; i <= retries; i++) {
+//     try {
+//       return await fn();
+//     } catch (err) {
+//       lastErr = err;
+//       const status = err?.response?.status;
+//       const code = err?.code;
+//       const retryable =
+//         status === 429 ||
+//         (status >= 500 && status < 600) ||
+//         ["ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EAI_AGAIN"].includes(code);
+//       if (!retryable || i === retries) break;
+//       await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+//     }
+//   }
+//   throw lastErr;
+// }
+
+// // OAuth2 token
+// async function getSalesforceToken() {
+//   try {
+//     const resp = await axios.post(SALESFORCE.tokenUrl, null, {
+//       params: {
+//         grant_type: "password",
+//         client_id: SALESFORCE.clientId,
+//         client_secret: SALESFORCE.clientSecret,
+//         username: SALESFORCE.username,
+//         password: SALESFORCE.password,
+//       },
+//     });
+//     return resp.data.access_token;
+//   } catch (error) {
+//     console.error("❌ Failed to generate Salesforce token:", error.message);
+//     throw new Error("Salesforce token generation failed");
+//   }
+// }
+
+// // Apex REST GET with token + retry
+// async function sfGet(pathname, params = {}) {
+//   const token = await getSalesforceToken();
+//   return withRetry(() =>
+//     axiosSF.get(pathname, {
+//       params,
+//       headers: { Authorization: `Bearer ${token}` },
+//     })
+//   );
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  UTC date helpers (critical for month/year boundaries)
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// function toUtcDate(input) {
+//   if (!input) return null;
+//   if (input instanceof Date) return input;
+//   const s = String(input);
+//   // If lacks TZ info, assume UTC (append 'Z')
+//   const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(s);
+//   const d = new Date(hasTZ ? s : `${s}Z`);
+//   return Number.isNaN(d.getTime()) ? null : d;
+// }
+
+// function isSameUtcMonth(dateLike, targetY, targetM) {
+//   const d = toUtcDate(dateLike);
+//   if (!d) return false;
+//   return d.getUTCFullYear() === targetY && d.getUTCMonth() === targetM; // 0..11
+// }
+
+// function utcTodayStart() {
+//   const d = new Date();
+//   d.setUTCHours(0, 0, 0, 0);
+//   return d;
+// }
+// function allowZeroingNow() {
+//   const now = new Date();
+//   const minsFromMidnight = now.getUTCHours() * 60 + now.getUTCMinutes();
+//   return minsFromMidnight > 45; // skip zeroing in first 45 minutes of UTC day
+// }
+
+// //   const nowUTC = new Date();
+// //   const targetY = nowUTC.getUTCFullYear();
+// //   const targetM = nowUTC.getUTCMonth();
+
+// //   console.log(
+// //     `🔄 [DEALS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+// //   );
+
+// //   const dealsResp = await sfGet("/services/apexrest/deals");
+// //   const allDeals = dealsResp?.data?.deals || [];
+
+// //   // Current month (UTC) by createddate
+// //   const monthlyDeals = allDeals.filter((d) =>
+// //     isSameUtcMonth(d?.createddate, targetY, targetM)
+// //   );
+
+// //   // YTD for lastDealDate (same UTC year)
+// //   const ytdDeals = allDeals.filter((d) => {
+// //     const dt = toUtcDate(d?.createddate);
+// //     return dt && dt.getUTCFullYear() === targetY;
+// //   });
+
+// //   const agents = await Agent.find({ isActive: true });
+// //   const agentMap = new Map(
+// //     agents.map((a) => [normalizeAgentName(a.agentName), a])
+// //   );
+
+// //   // Count monthly deals per agent
+// //   const dealCountsByAgent = new Map();
+// //   const unmatchedMonthly = [];
+
+// //   function twoAgentNamesOnly(deal) {
+// //     const names = [];
+// //     if (deal.deal_agent) names.push(deal.deal_agent.trim());
+// //     if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+// //     return names.filter(Boolean);
+// //   }
+
+// //   for (const deal of monthlyDeals) {
+// //     const names = twoAgentNamesOnly(deal);
+// //     if (!names.length) continue;
+
+// //     for (const nm of names) {
+// //       const key = normalizeAgentName(nm);
+// //       if (!key || !agentMap.has(key)) {
+// //         if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+// //         continue;
+// //       }
+// //       dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
+// //     }
+// //   }
+
+// //   // Compute lastDealDate(YTD) per agent
+// //   const agentLastDealDateYTD = new Map();
+// //   const unmatchedYtd = [];
+
+// //   for (const deal of ytdDeals) {
+// //     const names = twoAgentNamesOnly(deal);
+// //     if (!names.length) continue;
+
+// //     const dDate = toUtcDate(deal.createddate);
+// //     if (!dDate) continue;
+
+// //     for (const nm of names) {
+// //       const key = normalizeAgentName(nm);
+// //       if (!key) continue;
+
+// //       if (!agentMap.has(key)) {
+// //         if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+// //         continue;
+// //       }
+
+// //       const prev = agentLastDealDateYTD.get(key);
+// //       if (!prev || dDate > prev) agentLastDealDateYTD.set(key, dDate);
+// //     }
+// //   }
+
+// //   // Writeback (safe zeroing)
+// //   const todayUTC = utcTodayStart();
+// //   const canZero = allowZeroingNow();
+// //   const ops = [];
+// //   let agentsUpdated = 0;
+
+// //   for (const [key, agent] of agentMap.entries()) {
+// //     const dealCount = dealCountsByAgent.get(key) || 0;
+// //     const lastDealDate = agentLastDealDateYTD.get(key) || null;
+
+// //     let lastDealDays = null;
+// //     if (lastDealDate) {
+// //       const d0 = new Date(lastDealDate);
+// //       d0.setUTCHours(0, 0, 0, 0);
+// //       lastDealDays = Math.max(0, Math.floor((todayUTC - d0) / 86400000));
+// //     }
+
+// //     const $set = {
+// //       "leaderboard.lastDealDate": lastDealDate,
+// //       "leaderboard.lastDealDays": lastDealDays,
+// //       "leaderboard.lastUpdated": new Date(),
+// //       lastUpdated: new Date(),
+// //     };
+
+// //     // Only write propertiesSold=0 when the guard allows
+// //     if (dealCount !== 0 || canZero) {
+// //       $set["leaderboard.propertiesSold"] = dealCount;
+// //     }
+
+// //     ops.push({
+// //       updateOne: {
+// //         filter: { _id: agent._id },
+// //         update: { $set },
+// //       },
+// //     });
+
+// //     if (dealCount > 0) agentsUpdated++;
+// //   }
+
+// //   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+// //   console.log(
+// //     `✅ [DEALS CORE] Done → Agents Updated: ${agentsUpdated}, Deals This Month: ${monthlyDeals.length}`
+// //   );
+
+// //   return {
+// //     targetY,
+// //     targetM,
+// //     totals: {
+// //       totalDealsReturnedByAPI: allDeals.length,
+// //       dealsThisMonth: monthlyDeals.length,
+// //       agentsUpdated,
+// //     },
+// //     unmatched: { monthly: unmatchedMonthly, ytd: unmatchedYtd },
+// //   };
+// // }
+
+// // async function syncDealsJob() {
+// //   const nowUTC = new Date();
+// //   const targetY = nowUTC.getUTCFullYear();
+// //   const targetM = nowUTC.getUTCMonth();
+
+// //   console.log(
+// //     `🔄 [DEALS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+// //   );
+
+// //   // Pull once
+// //   const dealsResp = await sfGet("/services/apexrest/deals");
+// //   const allDeals = dealsResp?.data?.deals || [];
+
+// //   // Current month (UTC) by createddate
+// //   const monthlyDeals = allDeals.filter((d) =>
+// //     isSameUtcMonth(d?.createddate, targetY, targetM)
+// //   );
+
+// //   // YTD (same UTC year) — use all deals returned
+// //   const ytdDeals = allDeals.filter((d) => {
+// //     const dt = toUtcDate(d?.createddate);
+// //     return dt && dt.getUTCFullYear() === targetY;
+// //   });
+
+// //   const agents = await Agent.find({ isActive: true });
+// //   const agentMap = new Map(
+// //     agents.map((a) => [normalizeAgentName(a.agentName), a])
+// //   );
+
+// //   // ===== MONTHLY DEAL COUNTS (strict) =====
+// //   const dealCountsByAgent = new Map();
+// //   const unmatchedMonthly = [];
+
+// //   for (const deal of monthlyDeals) {
+// //     const names = twoAgentNamesOnly(deal);
+// //     if (!names.length) continue;
+
+// //     for (const nm of names) {
+// //       const key = normalizeAgentName(nm);
+// //       if (!key || !agentMap.has(key)) {
+// //         if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+// //         continue;
+// //       }
+// //       dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
+// //     }
+// //   }
+
+// //   // ===== YTD LAST DEAL DATE (with fallbacks) =====
+// //   const agentLastDealDateYTD = new Map();
+// //   const unmatchedYtd = [];
+
+// //   for (const deal of ytdDeals) {
+// //     // Start from primary
+// //     let candidateNames = twoAgentNamesOnly(deal);
+
+// //     // Fallbacks ONLY for lastDealDate
+// //     if (candidateNames.length === 0) {
+// //       const fromCommission = splitCommissionAgents(deal.commission_agents);
+// //       if (fromCommission.length) {
+// //         candidateNames = fromCommission;
+// //       } else if (deal.owner_name) {
+// //         candidateNames = [deal.owner_name.trim()];
+// //       }
+// //     }
+
+// //     if (!candidateNames.length) continue;
+
+// //     const dDate = getDealDate(deal);
+// //     if (!dDate) continue;
+
+// //     const uniq = uniqueNormalizedNames(candidateNames);
+// //     for (const { raw, key } of uniq) {
+// //       if (!agentMap.has(key)) {
+// //         if (raw && !unmatchedYtd.includes(raw)) unmatchedYtd.push(raw);
+// //         continue;
+// //       }
+// //       const prev = agentLastDealDateYTD.get(key);
+// //       if (!prev || dDate > prev) agentLastDealDateYTD.set(key, dDate);
+// //     }
+// //   }
+
+// //   // ===== Writeback =====
+// //   const todayUTC = utcTodayStart();
+// //   const canZero = allowZeroingNow();
+// //   const ops = [];
+// //   let agentsUpdated = 0;
+
+// //   for (const [key, agent] of agentMap.entries()) {
+// //     const dealCount = dealCountsByAgent.get(key) || 0;
+// //     const lastDealDate = agentLastDealDateYTD.get(key) || null;
+
+// //     let lastDealDays = null;
+// //     if (lastDealDate) {
+// //       const d0 = new Date(lastDealDate);
+// //       d0.setUTCHours(0, 0, 0, 0);
+// //       lastDealDays = Math.max(0, Math.floor((todayUTC - d0) / 86400000));
+// //     }
+
+// //     const $set = {
+// //       "leaderboard.lastDealDate": lastDealDate,
+// //       "leaderboard.lastDealDays": lastDealDays,
+// //       "leaderboard.lastUpdated": new Date(),
+// //       lastUpdated: new Date(),
+// //     };
+
+// //     // Only zero propertiesSold when allowed
+// //     if (dealCount !== 0 || canZero) {
+// //       $set["leaderboard.propertiesSold"] = dealCount;
+// //     }
+
+// //     ops.push({
+// //       updateOne: {
+// //         filter: { _id: agent._id },
+// //         update: { $set },
+// //       },
+// //     });
+
+// //     if (dealCount > 0) agentsUpdated++;
+// //   }
+
+// //   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+// //   console.log(
+// //     `✅ [DEALS CORE] Done → Agents Updated: ${agentsUpdated}, Deals This Month: ${monthlyDeals.length}`
+// //   );
+
+// //   return {
+// //     targetY,
+// //     targetM,
+// //     totals: {
+// //       totalDealsReturnedByAPI: allDeals.length,
+// //       dealsThisMonth: monthlyDeals.length,
+// //       agentsUpdated,
+// //     },
+// //     unmatched: { monthly: unmatchedMonthly, ytd: unmatchedYtd },
+// //   };
+// // }
+
+// // CRON-safe clone of your manual syncAgentDealsFromSalesforce (no req/res)
+// async function syncDealsJob() {
+//   try {
+//     // Always use CURRENT UTC month (no manual/month input)
+//     const nowUTC = new Date();
+//     const targetY = nowUTC.getUTCFullYear();
+//     const targetM = nowUTC.getUTCMonth();
+
+//     console.log(
+//       `🔄 [DEALS CRON] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+//     );
+
+//     // Fetch monthly & YTD deals
+//     const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
+//       sfGet("/services/apexrest/deals", { month: "this_month" }),
+//       sfGet("/services/apexrest/deals", { month: "ytd" }),
+//     ]);
+
+//     const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
+//     const ytdDealsRaw = ytdDealsResp?.data?.deals || [];
+
+//     // Strict UTC month filter
+//     const monthlyDeals = monthlyDealsRaw.filter((d) =>
+//       isSameUtcMonth(d.createddate, targetY, targetM)
+//     );
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     // ========== MONTHLY DEAL COUNTS ==========
+//     const dealCountsByAgent = new Map();
+//     const unmatchedMonthly = [];
+
+//     for (const deal of monthlyDeals) {
+//       const names = [];
+//       if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//       if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+//       if (names.length === 0) continue;
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!key || !agentMap.has(key)) {
+//           if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+//           continue;
+//         }
+//         dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
+//       }
+//     }
+
+//     // ========== YTD LAST DEAL DATE ==========
+//     const agentLastDealDateYTD = new Map();
+//     const unmatchedYtd = [];
+
+//     for (const deal of ytdDealsRaw) {
+//       const names = [];
+//       if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//       if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+//       if (names.length === 0) continue;
+
+//       const created = deal.createddate;
+//       const dealDate = created ? new Date(created) : null;
+//       if (!dealDate || isNaN(dealDate.getTime())) continue;
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!agentMap.has(key)) {
+//           if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+//           continue;
+//         }
+//         const prev = agentLastDealDateYTD.get(key);
+//         if (!prev || dealDate > prev) agentLastDealDateYTD.set(key, dealDate);
+//       }
+//     }
+
+//     // ========== UPDATE AGENTS ==========
+//     const todayUTC = new Date();
+//     todayUTC.setUTCHours(0, 0, 0, 0);
+
+//     const ops = [];
+//     let agentsUpdated = 0;
+//     const agentDeals = [];
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const dealCount = dealCountsByAgent.get(key) || 0;
+//       const lastDealDate = agentLastDealDateYTD.get(key) || null;
+
+//       let lastDealDays = null;
+//       if (lastDealDate) {
+//         const dealDateUTC = new Date(lastDealDate);
+//         dealDateUTC.setUTCHours(0, 0, 0, 0);
+//         const diffMs = todayUTC - dealDateUTC;
+//         lastDealDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+//       }
+
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: {
+//             $set: {
+//               "leaderboard.propertiesSold": dealCount,
+//               "leaderboard.lastDealDate": lastDealDate,
+//               "leaderboard.lastDealDays": lastDealDays,
+//               "leaderboard.lastUpdated": new Date(),
+//               lastUpdated: new Date(),
+//             },
+//           },
+//         },
+//       });
+
+//       agentDeals.push({
+//         agentName: agent.agentName,
+//         agentId: agent.agentId,
+//         dealCount,
+//         lastDealDate,
+//         daysSinceLastDeal: lastDealDays,
+//       });
+
+//       if (dealCount > 0) agentsUpdated++;
+//     }
+
+//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//     console.log(
+//       `✅ [DEALS CRON] Completed for ${targetY}-${String(targetM + 1).padStart(
+//         2,
+//         "0"
+//       )} (UTC). Agents updated: ${agentsUpdated}`
+//     );
+
+//     return {
+//       success: true,
+//       message: `Successfully synced current-month deals (UTC). Updated ${agentsUpdated} agents.`,
+//       data: {
+//         targetUTC: { year: targetY, monthIndex0: targetM },
+//         totalDealsReturnedByAPI: monthlyDealsRaw.length,
+//         totalDealsCountedAfterStrictFilter: monthlyDeals.length,
+//         agentsUpdated,
+//         agentDeals: agentDeals.sort((a, b) => b.dealCount - a.dealCount),
+//         unmatchedOwners: {
+//           monthly: unmatchedMonthly,
+//           ytd: unmatchedYtd,
+//         },
+//       },
+//     };
+//   } catch (error) {
+//     console.error("❌ [DEALS CRON] Error syncing deals:", error.message);
+//     return { success: false, error: error.message };
+//   }
+// }
+
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Commissions sync (single dataset; strict UTC current month)
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// function amountNumber(raw) {
+//   return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+// }
+
+// function twoAgentNamesOnly(deal) {
+//   const names = [];
+//   if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//   if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+//   return names.filter(Boolean);
+// }
+// async function syncCommissionsJobNew() {
+//   const nowUTC = new Date();
+//   const targetY = nowUTC.getUTCFullYear();
+//   const targetM = nowUTC.getUTCMonth();
+
+//   console.log(
+//     `🔄 [COMMISSIONS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+//   );
+
+//   const commissionsResp = await sfGet("/services/apexrest/commissions");
+//   const commissions = commissionsResp?.data?.commissions || [];
+
+//   const agents = await Agent.find({ isActive: true });
+//   const agentMap = new Map(
+//     agents.map((a) => [normalizeAgentName(a.agentName), a])
+//   );
+
+//   const commissionsByAgent = new Map();
+//   const unmatchedCommissionAgents = [];
+//   let filteredCount = 0;
+
+//   for (const c of commissions) {
+//     const created = c?.createddate;
+//     if (!isSameUtcMonth(created, targetY, targetM)) continue;
+//     filteredCount++;
+
+//     const agentName = c.agent_name || c.commission_agents;
+//     if (!agentName) continue;
+
+//     const key = normalizeAgentName(agentName);
+//     if (!agentMap.has(key)) {
+//       if (!unmatchedCommissionAgents.includes(agentName))
+//         unmatchedCommissionAgents.push(agentName);
+//       continue;
+//     }
+
+//     const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+//     const amt = amountNumber(raw);
+//     commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amt);
+//   }
+
+//   // Writeback (safe zeroing)
+//   const canZero = allowZeroingNow();
+//   const ops = [];
+//   let agentsUpdated = 0;
+
+//   for (const [key, agent] of agentMap.entries()) {
+//     const totalCommission = Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+//     const $set = {
+//       "leaderboard.lastUpdated": new Date(),
+//       lastUpdated: new Date(),
+//     };
+//     if (totalCommission !== 0 || canZero) {
+//       $set["leaderboard.totalCommission"] = totalCommission;
+//     }
+
+//     ops.push({
+//       updateOne: {
+//         filter: { _id: agent._id },
+//         update: { $set },
+//       },
+//     });
+
+//     if (totalCommission > 0) agentsUpdated++;
+//   }
+
+//   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//   console.log(
+//     `✅ [COMMISSIONS CORE] Completed for ${targetY}-${String(targetM + 1).padStart(2, "0")} (UTC).`
+//   );
+//   console.log(`   - Commission records synced (current month): ${filteredCount}`);
+//   console.log(`   - Agents updated: ${agentsUpdated}`);
+
+//   return {
+//     targetY,
+//     targetM,
+//     filteredCount,
+//     agentsUpdated,
+//     unmatchedCommissionAgents,
+//     totalReturned: commissions.length,
+//   };
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Viewings sync (single dataset; strict UTC current month by 'start')
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// async function syncViewingsJob() {
+//   const nowUTC = new Date();
+//   const targetY = nowUTC.getUTCFullYear();
+//   const targetM = nowUTC.getUTCMonth();
+
+//   console.log(
+//     `🔄 [VIEWINGS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+//   );
+
+//   const resp = await sfGet("/services/apexrest/viewings");
+//   const raw = resp?.data?.viewings || [];
+
+//   const viewings = raw.filter((v) => {
+//     const start = v?.start;
+//     return start && isSameUtcMonth(start, targetY, targetM);
+//   });
+
+//   const agents = await Agent.find({ isActive: true });
+//   const agentMap = new Map(
+//     agents.map((a) => [normalizeAgentName(a.agentName), a])
+//   );
+
+//   const counts = new Map();
+//   const unmatchedOwners = new Set();
+
+//   for (const v of viewings) {
+//     const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
+//     const key = normalizeAgentName(owner);
+//     if (!key) continue;
+
+//     if (agentMap.has(key)) {
+//       counts.set(key, (counts.get(key) || 0) + 1);
+//     } else if (owner) {
+//       unmatchedOwners.add(owner);
+//     }
+//   }
+
+//   // Writeback (safe zeroing)
+//   const canZero = allowZeroingNow();
+//   const ops = [];
+//   let agentsUpdated = 0;
+
+//   for (const [key, agent] of agentMap.entries()) {
+//     const viewingsCount = counts.get(key) || 0;
+
+//     const $set = {
+//       "leaderboard.lastUpdated": new Date(),
+//       lastUpdated: new Date(),
+//     };
+//     if (viewingsCount !== 0 || canZero) {
+//       $set["leaderboard.viewings"] = viewingsCount;
+//     }
+
+//     ops.push({
+//       updateOne: {
+//         filter: { _id: agent._id },
+//         update: { $set },
+//       },
+//     });
+
+//     if (viewingsCount > 0) agentsUpdated++;
+//   }
+
+//   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//   console.log(
+//     `✅ [VIEWINGS CORE] Done → UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}, ` +
+//       `Viewings: ${viewings.length}, Agents Updated: ${agentsUpdated}`
+//   );
+
+//   return {
+//     targetY,
+//     targetM,
+//     totalReturned: raw.length,
+//     viewingsThisMonth: viewings.length,
+//     agentsUpdated,
+//     agentViewings: Array.from(counts.entries())
+//       .map(([k, c]) => ({
+//         agentName: agentMap.get(k)?.agentName,
+//         agentId: agentMap.get(k)?.agentId,
+//         viewingCount: c,
+//       }))
+//       .sort((a, b) => b.viewingCount - a.viewingCount),
+//     unmatchedOwners: unmatchedOwners.size ? Array.from(unmatchedOwners) : [],
+//   };
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Monthly properties (calls model method). Ensure the model uses UTC getters.
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// async function syncMonthlyPropertiesJobNew() {
+//   try {
+//     console.log("🔄 [CRON] Starting monthly properties update...");
+//     const result = await Agent.updateAllAgentsMonthlyProperties();
+//     console.log(`✅ [CRON] Monthly properties updated for ${result.agentsUpdated} agents`);
+//     return result;
+//   } catch (error) {
+//     console.error("❌ [CRON] Error updating monthly properties:", error.message);
+//     throw error;
+//   }
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  Cron orchestration
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+// async function runAllSyncs() {
+//   return runAllSyncsLocked("master-sync", async () => {
+//     console.log("⏰ [CRON] Starting scheduled Salesforce sync job...");
+//     const t0 = Date.now();
+//     try {
+//       // Run in parallel
+//       await Promise.all([syncDealsJob(), syncCommissionsJobNew(), syncViewingsJob()]);
+//       // Then monthly properties
+//       await syncMonthlyPropertiesJobNew();
+
+//       const sec = ((Date.now() - t0) / 1000).toFixed(2);
+//       console.log(`✅ [CRON] All syncs completed successfully in ${sec}s`);
+//     } catch (error) {
+//       console.error("❌ [CRON] Error in scheduled sync job:", error.message);
+//     }
+//   });
+// }
+
+// let cronScheduled = false;
+// function setupCronJobs() {
+//   if (cronScheduled) {
+//     console.log("ℹ️  Cron already scheduled; skipping duplicate registration.");
+//     return;
+//   }
+
+//   // Every 15 minutes, pinned to UTC
+//   cron.schedule(
+//     "*/3 * * * *",
+//     async () => {
+//       await runAllSyncs(); // mutex-protected
+//     },
+//     { timezone: "UTC" }
+//   );
+
+//   cronScheduled = true;
+//   console.log("✅ Cron job scheduled: Salesforce sync will run every 3 minutes (UTC)");
+
+//   // Optional immediate run (also mutex-protected)
+//   console.log("🚀 Running initial sync on startup...");
+//   runAllSyncs();
+// }
+
+// /** ───────────────────────────────────────────────────────────────────────────
+//  *  API Handlers (manual triggers & leaderboard route)
+//  *  ─────────────────────────────────────────────────────────────────────────── */
+
+// // Manual: OAuth token (useful for diagnostics; don’t expose publicly)
+// const GetSalesForceToken = async (req, res) => {
+//   try {
+//     console.log("WORKING");
+//     const resp = await axios.post(SALESFORCE.tokenUrl, null, {
+//       params: {
+//         grant_type: "password",
+//         client_id: SALESFORCE.clientId,
+//         client_secret: SALESFORCE.clientSecret,
+//         username: SALESFORCE.username,
+//         password: SALESFORCE.password,
+//       },
+//     });
+//     console.log(resp.data.access_token);
+//     return res.status(200).json({ access_token: resp.data.access_token });
+//   } catch (error) {
+//     console.error("❌ Failed to generate Salesforce token:", error.message);
+//     return res.status(500).json({ success: false, error: "Salesforce token generation failed" });
+//   }
+// };
+
+// // Leaderboard (unchanged logic; sorts by totalCommission desc, with seq tiebreaker)
+// const getLeaderboardAgents = async (req, res) => {
+//   try {
+//     const page = Math.max(parseInt(req.query.page ?? "1", 10), 1);
+//     const limit = Math.max(parseInt(req.query.limit ?? "8", 10), 1);
+//     const skip = (page - 1) * limit;
+
+//     const allowedAgentNames = [
+//       "Simone Adlington",
+//       "Elamir Adnan",
+//       "Aaqib Ahmed",
+//       "Zaher Akhawi",
+//       "Saad Al Hossain",
+//       "Hady Azrieh",
+//       "Shorouk Bahromzoda",
+//       "Rowan Beale",
+//       "Abdelwaheb Bekhadda",
+//       "Vikram Biant",
+//       "Christos Demetriou",
+//       "Nathan Blake",
+//       "Rachel Stephens",
+//       "Thomas Breeds",
+//       "Joshua Brooks",
+//       "Nils Brunsch",
+//       "Kevin Dolan",
+//       "Joe Chiffi",
+//       "Christian Curran",
+//       "Pratik Das",
+//       "Amin Labioui",
+//       "Shaheen Emami",
+//       "Jack Evans",
+//       "Casey Gaggini",
+//       "Ben Greenwood",
+//       "Foteini Hadjidemetriou",
+//       "Georgia Hargreaves",
+//       "Charlie Harris",
+//       "Tom Hastings",
+//       "Magomed Kartoev",
+//       // "Ryan Kent",
+//       "Douglas Kisuule",
+//       "Alba Kuloglija",
+//       "Emma Jean Laycock",
+//       "Kevin Livingstone",
+//       "George Lupson",
+//       "Luca Mae Joseph",
+//       "Emma Elizabeth Maries",
+//       "David Marsh",
+//       "Clive Marsh",
+//       "Chris Michaelides",
+//       "Imad Najib",
+//       "Nadia Salman",
+//       "Samantha Scott",
+//       "Alexander Stanton",
+//       "Aidan Patric Stephenson",
+//       "Tetiana Syvak",
+//       "Sebastian Tyynela",
+//       "Callum Wallace",
+//       "Harry Warren",
+//       "Russell Wilson",
+//       "Leon Wright",
+//       "Shohrukh Bahromzoda",
+//       "Charlie Wright",
+//       "Katarin Donkin",
+//       "Samuel Hewitt",
+//       "Craig Sutherland",
+//       "Gulzhanat Turebayeva",
+//     ];
+
+//     const pipeline = [
+//       { $match: { agentName: { $in: allowedAgentNames } } },
+//       {
+//         $project: {
+//           agentName: 1,
+//           agentLanguage: 1,
+//           designation: 1,
+//           email: 1,
+//           whatsapp: 1,
+//           phone: 1,
+//           imageUrl: 1,
+//           isActive: 1,
+//           agentId: 1,
+//           leaderboard: 1,
+//           sequenceNumber: 1,
+//           reraNumber: 1,
+//           propertiesCount: { $size: { $ifNull: ["$properties", []] } },
+//         },
+//       },
+//       {
+//         $addFields: {
+//           _commission: { $toLong: { $ifNull: ["$leaderboard.totalCommission", 0] } },
+//           _tieSeq: { $toLong: { $ifNull: ["$sequenceNumber", 999999] } },
+//         },
+//       },
+//       { $sort: { _commission: -1, _tieSeq: 1 } },
+//     ];
+
+//     const allAgents = await Agent.aggregate(pipeline).allowDiskUse(true);
+
+//     const globalTotalCommission = allAgents.reduce(
+//       (sum, a) => sum + (a.leaderboard?.totalCommission ?? 0),
+//       0
+//     );
+
+//     const agentsWithPositions = allAgents.map((agent, index) => ({
+//       ...agent,
+//       position: index + 1,
+//     }));
+
+//     const paginatedAgents = agentsWithPositions.slice(skip, skip + limit);
+//     const total = agentsWithPositions.length;
+//     const totalPages = Math.ceil(total / limit);
+
+//     const mapped = paginatedAgents.map((a) => ({
+//       position: a.position,
+//       name: a.agentName,
+//       imageUrl: a.imageUrl,
+//       leaderboard: {
+//         activePropertiesThisMonth: a.leaderboard?.activePropertiesThisMonth ?? 0,
+//         propertiesSold: a.leaderboard?.propertiesSold ?? 0,
+//         totalCommission: a.leaderboard?.totalCommission ?? 0,
+//         viewings: a.leaderboard?.viewings ?? 0,
+//         lastDealDays: a.leaderboard?.lastDealDays ?? 0,
+//         offers: a.leaderboard?.offers ?? 0,
+//       },
+//       propertiesCount: a.propertiesCount ?? 0,
+//       agentId: a.agentId,
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       data: mapped,
+//       pagination: {
+//         page,
+//         limit,
+//         totalItems: total,
+//         totalPages,
+//         hasPrev: page > 1,
+//         hasNext: page < totalPages,
+//       },
+//       globalTotalCommission,
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ success: false, error: err.message });
+//   }
+// };
+
+// function resolveMonthUTC(monthParam = "this_month") {
+//   const now = new Date();
+//   let y = now.getUTCFullYear();
+//   let m = now.getUTCMonth();
+
+//   if (monthParam === "last_month") {
+//     if (m === 0) {
+//       y -= 1;
+//       m = 11;
+//     } else {
+//       m -= 1;
+//     }
+//   } else if (/^\d{4}-\d{2}$/.test(monthParam)) {
+//     const [yy, mm] = monthParam.split("-").map(Number);
+//     y = yy;
+//     m = mm - 1;
+//   }
+//   return { targetY: y, targetM: m };
+// }
+// // --- helpers ---
+// function parseUtcDate(s) {
+//   if (!s) return null;
+//   const d = new Date(s);
+//   return isNaN(d.getTime()) ? null : d;
+// }
+
+// function getDealDate(deal) {
+//   // Priority: createddate -> deal_agreed_date -> lastmodifieddate
+//   return (
+//     parseUtcDate(deal.createddate) ||
+//     parseUtcDate(deal.deal_agreed_date) ||
+//     parseUtcDate(deal.lastmodifieddate)
+//   );
+// }
+
+// function splitCommissionAgents(str) {
+//   if (!str) return [];
+//   return str
+//     .split(/[;,]/)
+//     .map(s => s.trim())
+//     .filter(Boolean);
+// }
+
+// function uniqueNormalizedNames(names) {
+//   const seen = new Set();
+//   const out = [];
+//   for (const n of names) {
+//     const key = normalizeAgentName(n);
+//     if (!key || seen.has(key)) continue;
+//     seen.add(key);
+//     out.push({ raw: n, key });
+//   }
+//   return out;
+// }
+// const syncAgentDealsFromSalesforce = async (req, res) => {
+//   try {
+//     const { month = "this_month" } = req.query;
+
+//     // Reuse the same helpers you used for commissions sync
+//     const { targetY, targetM } = resolveMonthUTC(month);
+
+//     console.log(
+//       `🔄 Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(
+//         targetM + 1
+//       ).padStart(2, "0")}`
+//     );
+
+//     // Fetch deals:
+//     // - monthly: for counting deals in the selected month
+//     // - ytd (or this_year): for lastDealDate (latest in the calendar year)
+//     const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
+//       sfGet("/services/apexrest/deals", { month }),
+//       sfGet("/services/apexrest/deals", { month: "ytd" }),
+//     ]);
+
+//     const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
+//     const ytdDealsRaw = ytdDealsResp?.data?.deals || [];
+
+//     // Strict month filter (createddate ONLY), same rule as commissions
+//     const monthlyDeals = monthlyDealsRaw.filter((d) =>
+//       isSameUtcMonth(d.createddate, targetY, targetM)
+//     );
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     // ===== MONTHLY DEAL COUNTS =====
+//     const dealCountsByAgent = new Map();
+//     const unmatchedMonthly = [];
+
+//     for (const deal of monthlyDeals) {
+//       // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
+//       const names = [];
+//       if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//       if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+
+//       // If no deal_agent fields, skip this deal
+//       if (names.length === 0) continue;
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!key || !agentMap.has(key)) {
+//           if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+//           continue;
+//         }
+//         dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
+//       }
+//     }
+
+//     // ===== YTD LAST DEAL DATE =====
+//     const ytdDeals = ytdDealsRaw;
+//     const agentLastDealDateYTD = new Map();
+//     const unmatchedYtd = [];
+
+//     for (const deal of ytdDeals) {
+//       // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
+//       const names = [];
+//       if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//       if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+
+//       // If no deal_agent fields, skip this deal
+//       if (names.length === 0) continue;
+
+//       const created = deal.createddate;
+//       const dealDate = created ? new Date(created) : null;
+//       if (!dealDate || isNaN(dealDate.getTime())) continue;
+
+//       for (const nm of names) {
+//         const key = normalizeAgentName(nm);
+//         if (!key) continue;
+//         if (!agentMap.has(key)) {
+//           if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+//           continue;
+//         }
+
+//         const prev = agentLastDealDateYTD.get(key);
+//         if (!prev || dealDate > prev) {
+//           agentLastDealDateYTD.set(key, dealDate);
+//         }
+//       }
+//     }
+
+//     // ===== UPDATE AGENTS (DEAL METRICS ONLY) =====
+//     // Calculate days using UTC midnight for consistency
+//     const todayUTC = new Date();
+//     todayUTC.setUTCHours(0, 0, 0, 0);
+
+//     const ops = [];
+//     let agentsUpdated = 0;
+//     const agentDeals = [];
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const dealCount = dealCountsByAgent.get(key) || 0;
+//       const lastDealDate = agentLastDealDateYTD.get(key) || null;
+
+//       // Calculate days properly using UTC dates
+//       let lastDealDays = null;
+//       if (lastDealDate) {
+//         const dealDateUTC = new Date(lastDealDate);
+//         dealDateUTC.setUTCHours(0, 0, 0, 0);
+
+//         // Calculate difference in days
+//         const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
+//         lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+//         // Ensure it's never negative
+//         lastDealDays = Math.max(0, lastDealDays);
+//       }
+
+//       // Prepare bulk update operation
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: {
+//             $set: {
+//               "leaderboard.propertiesSold": dealCount,
+//               "leaderboard.lastDealDate": lastDealDate,
+//               "leaderboard.lastDealDays": lastDealDays,
+//               "leaderboard.lastUpdated": new Date(),
+//               lastUpdated: new Date(),
+//             },
+//           },
+//         },
+//       });
+
+//       agentDeals.push({
+//         agentName: agent.agentName,
+//         agentId: agent.agentId,
+//         dealCount,
+//         lastDealDate,
+//         daysSinceLastDeal: lastDealDays,
+//       });
+
+//       if (dealCount > 0) agentsUpdated++;
+//     }
+
+//     // Execute bulk update (safe & fast)
+//     if (ops.length) {
+//       await Agent.bulkWrite(ops, { ordered: false });
+//     }
+
+//     console.log(
+//       `✅ DEALS-ONLY sync completed for ${targetY}-${String(targetM + 1).padStart(
+//         2,
+//         "0"
+//       )} (UTC).`
+//     );
+//     console.log(`- Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
+//     console.log(`- YTD deals scanned: ${ytdDeals.length}`);
+//     console.log(`- Agents updated: ${agentsUpdated}`);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Successfully synced ${monthlyDeals.length} monthly deals (strict UTC month). Updated ${agentsUpdated} agents with deal counts only.`,
+//       note: "Deals assigned only to deal_agent and deal_agent_2 (referrers excluded). Month inclusion = createddate in target UTC month.",
+//       data: {
+//         period: month,
+//         targetUTC: { year: targetY, monthIndex0: targetM },
+//         totalDealsReturnedByAPI: monthlyDealsRaw.length,
+//         totalDealsCountedAfterStrictFilter: monthlyDeals.length,
+//         agentsUpdated,
+//         agentDeals: agentDeals.sort((a, b) => b.dealCount - a.dealCount),
+//         unmatchedOwners: {
+//           monthly: unmatchedMonthly,
+//           ytd: unmatchedYtd,
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error syncing deals:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+
+
+// const syncAgentCommissionsFromSalesforce = async (req, res) => {
+//   try {
+//     const nowUTC = new Date();
+//     const targetY = nowUTC.getUTCFullYear();
+//     const targetM = nowUTC.getUTCMonth();
+
+//     console.log(
+//       `🔄 Starting Salesforce COMMISSIONS sync (single dataset) -> UTC ${targetY}-${String(
+//         targetM + 1
+//       ).padStart(2, "0")}`
+//     );
+
+//     const commissionsResp = await sfGet("/services/apexrest/commissions");
+//     const commissions = commissionsResp?.data?.commissions || [];
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const commissionsByAgent = new Map();
+//     const unmatchedCommissionAgents = [];
+//     let filteredCount = 0;
+
+//     const traceIncluded = [];
+//     const traceSkipped = [];
+
+//     for (const c of commissions) {
+//       const created = c?.createddate;
+//       const keep = isSameUtcMonth(created, targetY, targetM);
+
+//       if (!keep) {
+//         if (traceSkipped.length < 20)
+//           traceSkipped.push({
+//             ref: c.commission_ref_no,
+//             agent: c.agent_name || c.commission_agents,
+//             created,
+//           });
+//         continue;
+//       }
+
+//       filteredCount++;
+//       if (traceIncluded.length < 20)
+//         traceIncluded.push({
+//           ref: c.commission_ref_no,
+//           agent: c.agent_name || c.commission_agents,
+//           created,
+//         });
+
+//       const agentName = c.agent_name || c.commission_agents;
+//       if (!agentName) continue;
+
+//       const key = normalizeAgentName(agentName);
+//       if (!agentMap.has(key)) {
+//         if (!unmatchedCommissionAgents.includes(agentName))
+//           unmatchedCommissionAgents.push(agentName);
+//         continue;
+//       }
+
+//       const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+//       const amount = amountNumber(raw);
+
+//       commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
+//     }
+
+//     const canZero = allowZeroingNow();
+//     const ops = [];
+//     let agentsUpdated = 0;
+//     const agentCommissions = [];
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const totalCommission =
+//         Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+//       const $set = {
+//         "leaderboard.lastUpdated": new Date(),
+//         lastUpdated: new Date(),
+//       };
+//       if (totalCommission !== 0 || canZero) {
+//         $set["leaderboard.totalCommission"] = totalCommission;
+//       }
+
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: { $set },
+//         },
+//       });
+
+//       if (totalCommission > 0) agentsUpdated++;
+//       agentCommissions.push({
+//         agentName: agent.agentName,
+//         agentId: agent.agentId,
+//         totalCommission,
+//         currentDeals: agent.leaderboard?.propertiesSold || 0,
+//       });
+//     }
+
+//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//     console.log(
+//       `✅ COMMISSIONS sync completed for UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+//     );
+//     console.log(`   - Current month records: ${filteredCount}`);
+//     console.log(`   - Agents updated: ${agentsUpdated}`);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Synced ${filteredCount} commission records for current month (UTC).`,
+//       data: {
+//         targetUTC: { year: targetY, monthIndex0: targetM },
+//         totalCommissionRecordsReturned: commissions.length,
+//         currentMonthRecords: filteredCount,
+//         agentsWithCommission: agentsUpdated,
+//         agentsResetToZero: agents.length - agentsUpdated,
+//         agentCommissions: agentCommissions
+//           .filter((a) => a.totalCommission > 0)
+//           .sort((a, b) => b.totalCommission - a.totalCommission),
+//         unmatchedAgents: unmatchedCommissionAgents,
+//         debugSample: { includedFirst20: traceIncluded, skippedFirst20: traceSkipped },
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error syncing commissions:", error);
+//     return res.status(500).json({ success: false, error: error.message });
+//   }
+// };
+
+
+// const syncAgentViewingsFromSalesforce = async (req, res) => {
+//   try {
+//     const nowUTC = new Date();
+//     const targetY = nowUTC.getUTCFullYear();
+//     const targetM = nowUTC.getUTCMonth();
+
+//     console.log(
+//       `🔄 Starting Salesforce VIEWINGS sync (single dataset) -> UTC ${targetY}-${String(
+//         targetM + 1
+//       ).padStart(2, "0")}`
+//     );
+
+//     const resp = await sfGet("/services/apexrest/viewings");
+//     const raw = resp?.data?.viewings || [];
+
+//     const viewings = raw.filter((v) => {
+//       const start = v?.start;
+//       return start && isSameUtcMonth(start, targetY, targetM);
+//     });
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const counts = new Map();
+//     const unmatchedOwners = new Set();
+
+//     for (const v of viewings) {
+//       const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
+//       const key = normalizeAgentName(owner);
+//       if (!key) continue;
+
+//       if (agentMap.has(key)) {
+//         counts.set(key, (counts.get(key) || 0) + 1);
+//       } else if (owner) {
+//         unmatchedOwners.add(owner);
+//       }
+//     }
+
+//     const canZero = allowZeroingNow();
+//     const ops = [];
+//     let agentsUpdated = 0;
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const viewingsCount = counts.get(key) || 0;
+
+//       const $set = {
+//         "leaderboard.lastUpdated": new Date(),
+//         lastUpdated: new Date(),
+//       };
+//       if (viewingsCount !== 0 || canZero) {
+//         $set["leaderboard.viewings"] = viewingsCount;
+//       }
+
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: { $set },
+//         },
+//       });
+
+//       if (viewingsCount > 0) agentsUpdated++;
+//     }
+
+//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//     console.log(
+//       `✅ Viewings sync completed for UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}.`
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Synced ${viewings.length} viewings for current UTC month.`,
+//       note: "Single dataset from Salesforce. Strict UTC month matching on 'start'. Agents without viewings set with safe-zero guard.",
+//       data: {
+//         targetUTC: { year: targetY, monthIndex0: targetM },
+//         totalViewings: viewings.length,
+//         agentsUpdated,
+//         agentViewings: Array.from(counts.entries())
+//           .map(([k, c]) => ({
+//             agentName: agentMap.get(k)?.agentName,
+//             agentId: agentMap.get(k)?.agentId,
+//             viewingCount: c,
+//           }))
+//           .sort((a, b) => b.viewingCount - a.viewingCount),
+//         unmatchedOwners: unmatchedOwners.size ? Array.from(unmatchedOwners) : undefined,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error syncing Salesforce viewings:", error);
+//     const status = error?.response?.status || 500;
+//     const msg =
+//       status === 401
+//         ? "Salesforce authentication failed. Invalid or expired Bearer token"
+//         : "Failed to fetch viewings from Salesforce";
+//     return res.status(status === 401 ? 401 : 503).json({
+//       success: false,
+//       error: msg,
+//       details: error.message,
+//     });
+//   }
+// };
+
+
+// // Monthly properties (manual trigger)
+// const updateMonthlyPropertiesForAllAgents = async (req, res) => {
+//   try {
+//     console.log("📊 Starting monthly properties update...");
+//     const result = await Agent.updateAllAgentsMonthlyProperties();
+    
+//     return res.status(200).json({
+//       success: true,
+//       message: "Successfully updated monthly properties for all agents",
+//       data: {
+//         ...result,
+//         note: "Relisted properties (IDs ending with -1, -2, -3, etc.) are excluded from counts"
+//       }
+//     });
+//   } catch (error) {
+//     console.error("❌ Error updating monthly properties:", error.message);
+//     return res.status(500).json({
+//       success: false,
+//       error: "Failed to update monthly properties",
+//       details: error.message,
+//     });
+//   }
+// };
+
+
+// module.exports = {
+//   // Leaderboard
+//   getLeaderboardAgents,
+
+//   // Manual sync endpoints
+//   syncAgentDealsFromSalesforce,
+//   syncAgentViewingsFromSalesforce,
+//   syncAgentCommissionsFromSalesforce,
+
+//   // Monthly properties manual
+//   updateMonthlyPropertiesForAllAgents,
+
+//   // Token diagnostic
+//   getSalesforceToken: getSalesforceToken, // not an express handler
+//   GetSalesForceToken, // express handler for tests
+
+//   // Cron
+//   setupCronJobs,
+// };
+
+
+
 const axios = require("axios");
 const Agent = require("../Models/AgentModel");
 const cron = require("node-cron");
- 
+
 let masterSyncRunning = false;
 async function runAllSyncsLocked(fnName, fn) {
   if (masterSyncRunning) {
@@ -2250,13 +3751,6 @@ function utcTodayStart() {
   d.setUTCHours(0, 0, 0, 0);
   return d;
 }
-
-/** ───────────────────────────────────────────────────────────────────────────
- *  “Safe zeroing” guard:
- *  - Avoid writing zeros in the first minutes of a new UTC day when sources
- *    can be temporarily thin/empty due to upstream lags.
- *  Adjust window if needed.
- *  ─────────────────────────────────────────────────────────────────────────── */
 function allowZeroingNow() {
   const now = new Date();
   const minsFromMidnight = now.getUTCHours() * 60 + now.getUTCMinutes();
@@ -2264,280 +3758,393 @@ function allowZeroingNow() {
 }
 
 /** ───────────────────────────────────────────────────────────────────────────
- *  Deals sync (single dataset; strict UTC current month + YTD last deal date)
+ *  Month resolver (for manual deals endpoint)
  *  ─────────────────────────────────────────────────────────────────────────── */
-// async function syncDealsJob() {
-//   const nowUTC = new Date();
-//   const targetY = nowUTC.getUTCFullYear();
-//   const targetM = nowUTC.getUTCMonth();
+function resolveMonthUTC(monthParam = "this_month") {
+  const now = new Date();
+  let y = now.getUTCFullYear();
+  let m = now.getUTCMonth();
 
-//   console.log(
-//     `🔄 [DEALS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
-//   );
+  if (monthParam === "last_month") {
+    if (m === 0) {
+      y -= 1;
+      m = 11;
+    } else {
+      m -= 1;
+    }
+  } else if (/^\d{4}-\d{2}$/.test(monthParam)) {
+    const [yy, mm] = monthParam.split("-").map(Number);
+    y = yy;
+    m = mm - 1;
+  }
+  return { targetY: y, targetM: m };
+}
 
-//   const dealsResp = await sfGet("/services/apexrest/deals");
-//   const allDeals = dealsResp?.data?.deals || [];
+// --- helpers ---
+function parseUtcDate(s) {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 
-//   // Current month (UTC) by createddate
-//   const monthlyDeals = allDeals.filter((d) =>
-//     isSameUtcMonth(d?.createddate, targetY, targetM)
-//   );
+function getDealDate(deal) {
+  // Priority: createddate -> deal_agreed_date -> lastmodifieddate
+  return (
+    parseUtcDate(deal.createddate) ||
+    parseUtcDate(deal.deal_agreed_date) ||
+    parseUtcDate(deal.lastmodifieddate)
+  );
+}
 
-//   // YTD for lastDealDate (same UTC year)
-//   const ytdDeals = allDeals.filter((d) => {
-//     const dt = toUtcDate(d?.createddate);
-//     return dt && dt.getUTCFullYear() === targetY;
-//   });
+function splitCommissionAgents(str) {
+  if (!str) return [];
+  return str
+    .split(/[;,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
-//   const agents = await Agent.find({ isActive: true });
-//   const agentMap = new Map(
-//     agents.map((a) => [normalizeAgentName(a.agentName), a])
-//   );
+function uniqueNormalizedNames(names) {
+  const seen = new Set();
+  const out = [];
+  for (const n of names) {
+    const key = normalizeAgentName(n);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ raw: n, key });
+  }
+  return out;
+}
 
-//   // Count monthly deals per agent
-//   const dealCountsByAgent = new Map();
-//   const unmatchedMonthly = [];
+function amountNumber(raw) {
+  return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+}
 
-//   function twoAgentNamesOnly(deal) {
-//     const names = [];
-//     if (deal.deal_agent) names.push(deal.deal_agent.trim());
-//     if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
-//     return names.filter(Boolean);
-//   }
+function twoAgentNamesOnly(deal) {
+  const names = [];
+  if (deal.deal_agent) names.push(deal.deal_agent.trim());
+  if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+  return names.filter(Boolean);
+}
 
-//   for (const deal of monthlyDeals) {
-//     const names = twoAgentNamesOnly(deal);
-//     if (!names.length) continue;
+/** ───────────────────────────────────────────────────────────────────────────
+ *  NEW: Leaderboard snapshot builder (parser-style)
+ *  ─────────────────────────────────────────────────────────────────────────── */
 
-//     for (const nm of names) {
-//       const key = normalizeAgentName(nm);
-//       if (!key || !agentMap.has(key)) {
-//         if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
-//         continue;
-//       }
-//       dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
-//     }
-//   }
+/**
+ * Build a full leaderboard snapshot for the *current UTC month*
+ * from Salesforce deals, commissions, and viewings.
+ * This only computes in memory – no DB writes here.
+ */
+async function buildLeaderboardSnapshotCurrentMonth() {
+  const nowUTC = new Date();
+  const targetY = nowUTC.getUTCFullYear();
+  const targetM = nowUTC.getUTCMonth(); // 0..11
 
-//   // Compute lastDealDate(YTD) per agent
-//   const agentLastDealDateYTD = new Map();
-//   const unmatchedYtd = [];
+  console.log(
+    `🔄 [LEADERBOARD SNAPSHOT] Building for UTC ${targetY}-${String(
+      targetM + 1
+    ).padStart(2, "0")}`
+  );
 
-//   for (const deal of ytdDeals) {
-//     const names = twoAgentNamesOnly(deal);
-//     if (!names.length) continue;
+  // 1) Pull all required Salesforce datasets in parallel
+  const [dealsMonthlyResp, dealsYtdResp, commissionsResp, viewingsResp] =
+    await Promise.all([
+      sfGet("/services/apexrest/deals", { month: "this_month" }),
+      sfGet("/services/apexrest/deals", { month: "ytd" }),
+      sfGet("/services/apexrest/commissions"),
+      sfGet("/services/apexrest/viewings"),
+    ]);
 
-//     const dDate = toUtcDate(deal.createddate);
-//     if (!dDate) continue;
+  const monthlyDealsRaw = dealsMonthlyResp?.data?.deals || [];
+  const ytdDealsRaw = dealsYtdResp?.data?.deals || [];
+  const commissionsRaw = commissionsResp?.data?.commissions || [];
+  const viewingsRaw = viewingsResp?.data?.viewings || [];
 
-//     for (const nm of names) {
-//       const key = normalizeAgentName(nm);
-//       if (!key) continue;
+  // 2) Load all active agents once
+  const agents = await Agent.find({ isActive: true });
+  const agentMap = new Map(
+    agents.map((a) => [normalizeAgentName(a.agentName), a])
+  );
 
-//       if (!agentMap.has(key)) {
-//         if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
-//         continue;
-//       }
+  // 3) Snapshot metrics per agent (keyed by normalized name)
+  const metricsByKey = new Map();
 
-//       const prev = agentLastDealDateYTD.get(key);
-//       if (!prev || dDate > prev) agentLastDealDateYTD.set(key, dDate);
-//     }
-//   }
+  const ensureMetrics = (key) => {
+    let m = metricsByKey.get(key);
+    if (!m) {
+      m = {
+        propertiesSold: 0,
+        totalCommission: 0,
+        viewings: 0,
+        lastDealDate: null,
+      };
+      metricsByKey.set(key, m);
+    }
+    return m;
+  };
 
-//   // Writeback (safe zeroing)
-//   const todayUTC = utcTodayStart();
-//   const canZero = allowZeroingNow();
-//   const ops = [];
-//   let agentsUpdated = 0;
+  /* ───────────── DEALS: propertiesSold + lastDealDate ───────────── */
 
-//   for (const [key, agent] of agentMap.entries()) {
-//     const dealCount = dealCountsByAgent.get(key) || 0;
-//     const lastDealDate = agentLastDealDateYTD.get(key) || null;
+  const monthlyDeals = monthlyDealsRaw.filter((d) =>
+    isSameUtcMonth(d?.createddate, targetY, targetM)
+  );
 
-//     let lastDealDays = null;
-//     if (lastDealDate) {
-//       const d0 = new Date(lastDealDate);
-//       d0.setUTCHours(0, 0, 0, 0);
-//       lastDealDays = Math.max(0, Math.floor((todayUTC - d0) / 86400000));
-//     }
+  const unmatchedMonthly = [];
+  const unmatchedYtd = [];
 
-//     const $set = {
-//       "leaderboard.lastDealDate": lastDealDate,
-//       "leaderboard.lastDealDays": lastDealDays,
-//       "leaderboard.lastUpdated": new Date(),
-//       lastUpdated: new Date(),
-//     };
+  const namesFromDeal = (deal) => {
+    const names = [];
+    if (deal.deal_agent) names.push(deal.deal_agent.trim());
+    if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+    return names.filter(Boolean);
+  };
 
-//     // Only write propertiesSold=0 when the guard allows
-//     if (dealCount !== 0 || canZero) {
-//       $set["leaderboard.propertiesSold"] = dealCount;
-//     }
+  // Monthly deal counts
+  for (const deal of monthlyDeals) {
+    const names = namesFromDeal(deal);
+    if (!names.length) continue;
 
-//     ops.push({
-//       updateOne: {
-//         filter: { _id: agent._id },
-//         update: { $set },
-//       },
-//     });
+    for (const nm of names) {
+      const key = normalizeAgentName(nm);
+      if (!key || !agentMap.has(key)) {
+        if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
+        continue;
+      }
+      const m = ensureMetrics(key);
+      m.propertiesSold += 1;
+    }
+  }
 
-//     if (dealCount > 0) agentsUpdated++;
-//   }
+  // YTD lastDealDate
+  for (const deal of ytdDealsRaw) {
+    const names = namesFromDeal(deal);
+    if (!names.length) continue;
 
-//   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+    const created = deal.createddate;
+    const dealDate = created ? new Date(created) : null;
+    if (!dealDate || Number.isNaN(dealDate.getTime())) continue;
 
-//   console.log(
-//     `✅ [DEALS CORE] Done → Agents Updated: ${agentsUpdated}, Deals This Month: ${monthlyDeals.length}`
-//   );
+    for (const nm of names) {
+      const key = normalizeAgentName(nm);
+      if (!key) continue;
+      if (!agentMap.has(key)) {
+        if (nm && !unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
+        continue;
+      }
+      const m = ensureMetrics(key);
+      if (!m.lastDealDate || dealDate > m.lastDealDate) {
+        m.lastDealDate = dealDate;
+      }
+    }
+  }
 
-//   return {
-//     targetY,
-//     targetM,
-//     totals: {
-//       totalDealsReturnedByAPI: allDeals.length,
-//       dealsThisMonth: monthlyDeals.length,
-//       agentsUpdated,
-//     },
-//     unmatched: { monthly: unmatchedMonthly, ytd: unmatchedYtd },
-//   };
-// }
+  /* ───────────── COMMISSIONS: totalCommission ───────────── */
 
-// async function syncDealsJob() {
-//   const nowUTC = new Date();
-//   const targetY = nowUTC.getUTCFullYear();
-//   const targetM = nowUTC.getUTCMonth();
+  const unmatchedCommissionAgents = [];
+  let filteredCommissionsCount = 0;
 
-//   console.log(
-//     `🔄 [DEALS CORE] Sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
-//   );
+  for (const c of commissionsRaw) {
+    const created = c?.createddate;
+    if (!isSameUtcMonth(created, targetY, targetM)) continue;
+    filteredCommissionsCount++;
 
-//   // Pull once
-//   const dealsResp = await sfGet("/services/apexrest/deals");
-//   const allDeals = dealsResp?.data?.deals || [];
+    const agentName = c.agent_name || c.commission_agents;
+    if (!agentName) continue;
 
-//   // Current month (UTC) by createddate
-//   const monthlyDeals = allDeals.filter((d) =>
-//     isSameUtcMonth(d?.createddate, targetY, targetM)
-//   );
+    const key = normalizeAgentName(agentName);
+    if (!agentMap.has(key)) {
+      if (!unmatchedCommissionAgents.includes(agentName))
+        unmatchedCommissionAgents.push(agentName);
+      continue;
+    }
 
-//   // YTD (same UTC year) — use all deals returned
-//   const ytdDeals = allDeals.filter((d) => {
-//     const dt = toUtcDate(d?.createddate);
-//     return dt && dt.getUTCFullYear() === targetY;
-//   });
+    const rawAmount = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+    const amt = amountNumber(rawAmount);
 
-//   const agents = await Agent.find({ isActive: true });
-//   const agentMap = new Map(
-//     agents.map((a) => [normalizeAgentName(a.agentName), a])
-//   );
+    const m = ensureMetrics(key);
+    m.totalCommission += amt;
+  }
 
-//   // ===== MONTHLY DEAL COUNTS (strict) =====
-//   const dealCountsByAgent = new Map();
-//   const unmatchedMonthly = [];
+  /* ───────────── VIEWINGS: viewings count ───────────── */
 
-//   for (const deal of monthlyDeals) {
-//     const names = twoAgentNamesOnly(deal);
-//     if (!names.length) continue;
+  const unmatchedViewingOwners = new Set();
 
-//     for (const nm of names) {
-//       const key = normalizeAgentName(nm);
-//       if (!key || !agentMap.has(key)) {
-//         if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
-//         continue;
-//       }
-//       dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
-//     }
-//   }
+  const currentMonthViewings = viewingsRaw.filter((v) =>
+    isSameUtcMonth(v?.start, targetY, targetM)
+  );
 
-//   // ===== YTD LAST DEAL DATE (with fallbacks) =====
-//   const agentLastDealDateYTD = new Map();
-//   const unmatchedYtd = [];
+  for (const v of currentMonthViewings) {
+    const owner = v.owner || v.owner_name || v.agent_name || v.createdById;
+    const key = normalizeAgentName(owner);
+    if (!key) continue;
 
-//   for (const deal of ytdDeals) {
-//     // Start from primary
-//     let candidateNames = twoAgentNamesOnly(deal);
+    if (agentMap.has(key)) {
+      const m = ensureMetrics(key);
+      m.viewings += 1;
+    } else if (owner) {
+      unmatchedViewingOwners.add(owner);
+    }
+  }
 
-//     // Fallbacks ONLY for lastDealDate
-//     if (candidateNames.length === 0) {
-//       const fromCommission = splitCommissionAgents(deal.commission_agents);
-//       if (fromCommission.length) {
-//         candidateNames = fromCommission;
-//       } else if (deal.owner_name) {
-//         candidateNames = [deal.owner_name.trim()];
-//       }
-//     }
+  return {
+    targetY,
+    targetM,
+    agents,
+    agentMap,
+    metricsByKey,
+    meta: {
+      deals: {
+        monthlyDeals: monthlyDeals.length,
+        totalDealsResp: monthlyDealsRaw.length,
+        unmatchedMonthly,
+        unmatchedYtd,
+      },
+      commissions: {
+        filteredCommissionsCount,
+        totalCommissionsResp: commissionsRaw.length,
+        unmatchedCommissionAgents,
+      },
+      viewings: {
+        totalViewingsResp: viewingsRaw.length,
+        viewingsThisMonth: currentMonthViewings.length,
+        unmatchedViewingOwners: Array.from(unmatchedViewingOwners),
+      },
+    },
+  };
+}
 
-//     if (!candidateNames.length) continue;
+/**
+ * Apply a leaderboard snapshot to Mongo in a single bulkWrite,
+ * parser-style (no per-agent .save() loops).
+ */
+async function applyLeaderboardSnapshot(snapshot) {
+  const {
+    targetY,
+    targetM,
+    agentMap,
+    metricsByKey,
+    meta,
+  } = snapshot;
 
-//     const dDate = getDealDate(deal);
-//     if (!dDate) continue;
+  const todayUTC = utcTodayStart();
+  const canZero = allowZeroingNow();
+  const now = new Date();
 
-//     const uniq = uniqueNormalizedNames(candidateNames);
-//     for (const { raw, key } of uniq) {
-//       if (!agentMap.has(key)) {
-//         if (raw && !unmatchedYtd.includes(raw)) unmatchedYtd.push(raw);
-//         continue;
-//       }
-//       const prev = agentLastDealDateYTD.get(key);
-//       if (!prev || dDate > prev) agentLastDealDateYTD.set(key, dDate);
-//     }
-//   }
+  const ops = [];
+  let agentsTouched = 0;
 
-//   // ===== Writeback =====
-//   const todayUTC = utcTodayStart();
-//   const canZero = allowZeroingNow();
-//   const ops = [];
-//   let agentsUpdated = 0;
+  for (const [key, agent] of agentMap.entries()) {
+    const m = metricsByKey.get(key) || {
+      propertiesSold: 0,
+      totalCommission: 0,
+      viewings: 0,
+      lastDealDate: null,
+    };
 
-//   for (const [key, agent] of agentMap.entries()) {
-//     const dealCount = dealCountsByAgent.get(key) || 0;
-//     const lastDealDate = agentLastDealDateYTD.get(key) || null;
+    const propertiesSold = m.propertiesSold || 0;
+    const totalCommission =
+      Math.round((m.totalCommission || 0) * 100) / 100;
+    const viewings = m.viewings || 0;
 
-//     let lastDealDays = null;
-//     if (lastDealDate) {
-//       const d0 = new Date(lastDealDate);
-//       d0.setUTCHours(0, 0, 0, 0);
-//       lastDealDays = Math.max(0, Math.floor((todayUTC - d0) / 86400000));
-//     }
+    let lastDealDays = null;
+    if (m.lastDealDate) {
+      const d0 = new Date(m.lastDealDate);
+      d0.setUTCHours(0, 0, 0, 0);
+      lastDealDays = Math.max(
+        0,
+        Math.floor((todayUTC - d0) / 86400000)
+      );
+    }
 
-//     const $set = {
-//       "leaderboard.lastDealDate": lastDealDate,
-//       "leaderboard.lastDealDays": lastDealDays,
-//       "leaderboard.lastUpdated": new Date(),
-//       lastUpdated: new Date(),
-//     };
+    const $set = {
+      "leaderboard.lastUpdated": now,
+      lastUpdated: now,
+    };
 
-//     // Only zero propertiesSold when allowed
-//     if (dealCount !== 0 || canZero) {
-//       $set["leaderboard.propertiesSold"] = dealCount;
-//     }
+    if (propertiesSold !== 0 || canZero) {
+      $set["leaderboard.propertiesSold"] = propertiesSold;
+    }
+    if (totalCommission !== 0 || canZero) {
+      $set["leaderboard.totalCommission"] = totalCommission;
+    }
+    if (viewings !== 0 || canZero) {
+      $set["leaderboard.viewings"] = viewings;
+    }
+    if (m.lastDealDate) {
+      $set["leaderboard.lastDealDate"] = m.lastDealDate;
+      $set["leaderboard.lastDealDays"] = lastDealDays;
+    } else {
+      // If no last deal, and canZero is true, we can clear date/days to null
+      if (canZero) {
+        $set["leaderboard.lastDealDate"] = null;
+        $set["leaderboard.lastDealDays"] = null;
+      }
+    }
 
-//     ops.push({
-//       updateOne: {
-//         filter: { _id: agent._id },
-//         update: { $set },
-//       },
-//     });
+    ops.push({
+      updateOne: {
+        filter: { _id: agent._id },
+        update: { $set },
+      },
+    });
 
-//     if (dealCount > 0) agentsUpdated++;
-//   }
+    if (
+      propertiesSold !== 0 ||
+      totalCommission !== 0 ||
+      viewings !== 0 ||
+      m.lastDealDate
+    ) {
+      agentsTouched++;
+    }
+  }
 
-//   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+  if (!ops.length) {
+    console.log(
+      `ℹ️ [LEADERBOARD SNAPSHOT] No leaderboard updates needed for UTC ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")}`
+    );
+    return {
+      targetY,
+      targetM,
+      agentsTouched: 0,
+      meta,
+    };
+  }
 
-//   console.log(
-//     `✅ [DEALS CORE] Done → Agents Updated: ${agentsUpdated}, Deals This Month: ${monthlyDeals.length}`
-//   );
+  await Agent.bulkWrite(ops, { ordered: false });
 
-//   return {
-//     targetY,
-//     targetM,
-//     totals: {
-//       totalDealsReturnedByAPI: allDeals.length,
-//       dealsThisMonth: monthlyDeals.length,
-//       agentsUpdated,
-//     },
-//     unmatched: { monthly: unmatchedMonthly, ytd: unmatchedYtd },
-//   };
-// }
+  console.log(
+    `✅ [LEADERBOARD SNAPSHOT] Applied in single bulkWrite for UTC ${targetY}-${String(
+      targetM + 1
+    ).padStart(2, "0")} → Agents touched: ${agentsTouched}`
+  );
+
+  return {
+    targetY,
+    targetM,
+    agentsTouched,
+    meta,
+  };
+}
+
+/**
+ * Core function the cron (and optionally manual) can call:
+ * builds snapshot + applies it in one go.
+ */
+async function syncLeaderboardCoreCurrentMonth() {
+  const snapshot = await buildLeaderboardSnapshotCurrentMonth();
+  return applyLeaderboardSnapshot(snapshot);
+}
+
+/** ───────────────────────────────────────────────────────────────────────────
+ *  OLD/EXISTING JOB HELPERS (kept for reference / potential reuse)
+ *  ───────────────────────────────────────────────────────────────────────────
+ *  NOTE: Cron no longer calls the per-metric jobs; instead it uses
+ *  syncLeaderboardCoreCurrentMonth() above for a single batch update.
+ *  Manual endpoints below are kept as-is for debugging/analytics.
+ */
 
 // CRON-safe clone of your manual syncAgentDealsFromSalesforce (no req/res)
 async function syncDealsJob() {
@@ -2691,20 +4298,9 @@ async function syncDealsJob() {
   }
 }
 
-
 /** ───────────────────────────────────────────────────────────────────────────
  *  Commissions sync (single dataset; strict UTC current month)
  *  ─────────────────────────────────────────────────────────────────────────── */
-function amountNumber(raw) {
-  return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
-}
-
-function twoAgentNamesOnly(deal) {
-  const names = [];
-  if (deal.deal_agent) names.push(deal.deal_agent.trim());
-  if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
-  return names.filter(Boolean);
-}
 async function syncCommissionsJobNew() {
   const nowUTC = new Date();
   const targetY = nowUTC.getUTCFullYear();
@@ -2746,7 +4342,6 @@ async function syncCommissionsJobNew() {
     commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amt);
   }
 
-  // Writeback (safe zeroing)
   const canZero = allowZeroingNow();
   const ops = [];
   let agentsUpdated = 0;
@@ -2775,7 +4370,10 @@ async function syncCommissionsJobNew() {
   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
   console.log(
-    `✅ [COMMISSIONS CORE] Completed for ${targetY}-${String(targetM + 1).padStart(2, "0")} (UTC).`
+    `✅ [COMMISSIONS CORE] Completed for ${targetY}-${String(targetM + 1).padStart(
+      2,
+      "0"
+    )} (UTC).`
   );
   console.log(`   - Commission records synced (current month): ${filteredCount}`);
   console.log(`   - Agents updated: ${agentsUpdated}`);
@@ -2830,7 +4428,6 @@ async function syncViewingsJob() {
     }
   }
 
-  // Writeback (safe zeroing)
   const canZero = allowZeroingNow();
   const ops = [];
   let agentsUpdated = 0;
@@ -2859,7 +4456,10 @@ async function syncViewingsJob() {
   if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
   console.log(
-    `✅ [VIEWINGS CORE] Done → UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}, ` +
+    `✅ [VIEWINGS CORE] Done → UTC ${targetY}-${String(targetM + 1).padStart(
+      2,
+      "0"
+    )}, ` +
       `Viewings: ${viewings.length}, Agents Updated: ${agentsUpdated}`
   );
 
@@ -2896,20 +4496,29 @@ async function syncMonthlyPropertiesJobNew() {
 }
 
 /** ───────────────────────────────────────────────────────────────────────────
- *  Cron orchestration
+ *  Cron orchestration (now using parser-style leaderboard snapshot)
  *  ─────────────────────────────────────────────────────────────────────────── */
 async function runAllSyncs() {
   return runAllSyncsLocked("master-sync", async () => {
     console.log("⏰ [CRON] Starting scheduled Salesforce sync job...");
     const t0 = Date.now();
     try {
-      // Run in parallel
-      await Promise.all([syncDealsJob(), syncCommissionsJobNew(), syncViewingsJob()]);
-      // Then monthly properties
-      await syncMonthlyPropertiesJobNew();
+      // 1) Build & apply leaderboard snapshot in one shot
+      const leaderboardResult = await syncLeaderboardCoreCurrentMonth();
+
+      // 2) Then monthly properties (agent model method)
+      const monthlyPropsResult = await syncMonthlyPropertiesJobNew();
 
       const sec = ((Date.now() - t0) / 1000).toFixed(2);
-      console.log(`✅ [CRON] All syncs completed successfully in ${sec}s`);
+      console.log(
+        `✅ [CRON] All syncs completed successfully in ${sec}s`
+      );
+      console.log(
+        `   → Leaderboard: agentsTouched=${leaderboardResult.agentsTouched}, month=${leaderboardResult.targetM + 1}/${leaderboardResult.targetY}`
+      );
+      console.log(
+        `   → Monthly properties: agentsUpdated=${monthlyPropsResult.agentsUpdated}`
+      );
     } catch (error) {
       console.error("❌ [CRON] Error in scheduled sync job:", error.message);
     }
@@ -2923,11 +4532,11 @@ function setupCronJobs() {
     return;
   }
 
-  // Every 15 minutes, pinned to UTC
+  // Every 3 minutes, pinned to UTC
   cron.schedule(
     "*/3 * * * *",
     async () => {
-      await runAllSyncs(); // mutex-protected
+      await runAllSyncs(); // mutex-protected, snapshot-style
     },
     { timezone: "UTC" }
   );
@@ -3111,402 +4720,10 @@ const getLeaderboardAgents = async (req, res) => {
   }
 };
 
-// Manual routes (single-dataset versions, mirroring cron core)
+/** ───────────────────────────────────────────────────────────────────────────
+ *  Manual sync endpoints (kept for debugging / analytics)
+ *  ─────────────────────────────────────────────────────────────────────────── */
 
-// const syncAgentDealsFromSalesforce = async (req, res) => {
-//   try {
-//     const nowUTC = new Date();
-//     const targetY = nowUTC.getUTCFullYear();
-//     const targetM = nowUTC.getUTCMonth();
-
-//     console.log(
-//       `🔄 Starting Salesforce DEALS sync -> UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
-//     );
-
-//     const dealsResp = await sfGet("/services/apexrest/deals");
-//     const allDeals = dealsResp?.data?.deals || [];
-
-//     const monthlyDeals = allDeals.filter((d) =>
-//       isSameUtcMonth(d?.createddate, targetY, targetM)
-//     );
-
-//     const ytdDeals = allDeals.filter((d) => {
-//       const dt = toUtcDate(d?.createddate);
-//       return dt && dt.getUTCFullYear() === targetY;
-//     });
-
-//     const agents = await Agent.find({ isActive: true });
-//     const agentMap = new Map(
-//       agents.map((a) => [normalizeAgentName(a.agentName), a])
-//     );
-
-//     const dealCountsByAgent = new Map();
-//     const unmatchedMonthly = [];
-
-//     function twoAgentNamesOnly(deal) {
-//       const names = [];
-//       if (deal.deal_agent) names.push(deal.deal_agent.trim());
-//       if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
-//       return names.filter(Boolean);
-//     }
-
-//     for (const deal of monthlyDeals) {
-//       const names = twoAgentNamesOnly(deal);
-//       if (!names.length) continue;
-
-//       for (const nm of names) {
-//         const key = normalizeAgentName(nm);
-//         if (!key || !agentMap.has(key)) {
-//           if (!unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
-//           continue;
-//         }
-//         dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
-//       }
-//     }
-
-//     const agentLastDealDateYTD = new Map();
-//     const unmatchedYtd = [];
-
-//     for (const deal of ytdDeals) {
-//       const names = twoAgentNamesOnly(deal);
-//       if (!names.length) continue;
-
-//       const dDate = toUtcDate(deal.createddate);
-//       if (!dDate) continue;
-
-//       for (const nm of names) {
-//         const key = normalizeAgentName(nm);
-//         if (!key) continue;
-
-//         if (!agentMap.has(key)) {
-//           if (!unmatchedYtd.includes(nm)) unmatchedYtd.push(nm);
-//           continue;
-//         }
-//         const prev = agentLastDealDateYTD.get(key);
-//         if (!prev || dDate > prev) agentLastDealDateYTD.set(key, dDate);
-//       }
-//     }
-
-//     const todayUTC = utcTodayStart();
-//     const canZero = allowZeroingNow();
-//     const ops = [];
-//     let agentsUpdated = 0;
-//     const agentDeals = [];
-
-//     for (const [key, agent] of agentMap.entries()) {
-//       const dealCount = dealCountsByAgent.get(key) || 0;
-//       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-
-//       let lastDealDays = null;
-//       if (lastDealDate) {
-//         const d0 = new Date(lastDealDate);
-//         d0.setUTCHours(0, 0, 0, 0);
-//         lastDealDays = Math.max(0, Math.floor((todayUTC - d0) / 86400000));
-//       }
-
-//       const $set = {
-//         "leaderboard.lastDealDate": lastDealDate,
-//         "leaderboard.lastDealDays": lastDealDays,
-//         "leaderboard.lastUpdated": new Date(),
-//         lastUpdated: new Date(),
-//       };
-//       if (dealCount !== 0 || canZero) {
-//         $set["leaderboard.propertiesSold"] = dealCount;
-//       }
-
-//       ops.push({
-//         updateOne: {
-//           filter: { _id: agent._id },
-//           update: { $set },
-//         },
-//       });
-
-//       agentDeals.push({
-//         agentName: agent.agentName,
-//         agentId: agent.agentId,
-//         dealCount,
-//         lastDealDate,
-//         daysSinceLastDeal: lastDealDays,
-//       });
-
-//       if (dealCount > 0) agentsUpdated++;
-//     }
-
-//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
-
-//     console.log(
-//       `✅ DEALS SYNC DONE → Agents Updated: ${agentsUpdated}, Deals This Month: ${monthlyDeals.length}`
-//     );
-
-//     return res.status(200).json({
-//       success: true,
-//       message: `Synced deals successfully.`,
-//       data: {
-//         targetUTC: { year: targetY, monthIndex0: targetM },
-//         totalDealsReturnedByAPI: allDeals.length,
-//         dealsThisMonth: monthlyDeals.length,
-//         agentsUpdated,
-//         agentDeals: agentDeals.sort((a, b) => b.dealCount - a.dealCount),
-//         unmatched: { monthly: unmatchedMonthly, ytd: unmatchedYtd },
-//       },
-//     });
-//   } catch (error) {
-//     console.error("❌ Error syncing deals:", error.message);
-//     return res.status(500).json({ success: false, error: error.message });
-//   }
-// };
-function resolveMonthUTC(monthParam = "this_month") {
-  const now = new Date();
-  let y = now.getUTCFullYear();
-  let m = now.getUTCMonth();
-
-  if (monthParam === "last_month") {
-    if (m === 0) {
-      y -= 1;
-      m = 11;
-    } else {
-      m -= 1;
-    }
-  } else if (/^\d{4}-\d{2}$/.test(monthParam)) {
-    const [yy, mm] = monthParam.split("-").map(Number);
-    y = yy;
-    m = mm - 1;
-  }
-  return { targetY: y, targetM: m };
-}
-// --- helpers ---
-function parseUtcDate(s) {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function getDealDate(deal) {
-  // Priority: createddate -> deal_agreed_date -> lastmodifieddate
-  return (
-    parseUtcDate(deal.createddate) ||
-    parseUtcDate(deal.deal_agreed_date) ||
-    parseUtcDate(deal.lastmodifieddate)
-  );
-}
-
-function splitCommissionAgents(str) {
-  if (!str) return [];
-  return str
-    .split(/[;,]/)
-    .map(s => s.trim())
-    .filter(Boolean);
-}
-
-function uniqueNormalizedNames(names) {
-  const seen = new Set();
-  const out = [];
-  for (const n of names) {
-    const key = normalizeAgentName(n);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push({ raw: n, key });
-  }
-  return out;
-}
-
-// const syncAgentDealsFromSalesforce = async (req, res) => {
-//   try {
-//     const { month = "this_month" } = req.query;
-
-//     // Reuse the same helpers you used for commissions sync
-//     const { targetY, targetM } = resolveMonthUTC(month);
-
-//     console.log(
-//       `🔄 Starting Salesforce DEALS-ONLY sync for: ${month} -> UTC ${targetY}-${String(
-//         targetM + 1
-//       ).padStart(2, "0")}`
-//     );
-
-//     // Fetch deals:
-//     // - monthly: for counting deals in the selected month
-//     // - ytd (or this_year): for lastDealDate (latest in the calendar year)
-//     const [monthlyDealsResp, ytdDealsResp] = await Promise.all([
-//       sfGet("/services/apexrest/deals", { month }),
-//       sfGet("/services/apexrest/deals", { month: "ytd" }),
-//     ]);
-
-//     const monthlyDealsRaw = monthlyDealsResp?.data?.deals || [];
-//     const ytdDealsRaw = ytdDealsResp?.data?.deals || [];
-
-//     // Strict month filter (createddate ONLY), same rule as commissions
-//     const monthlyDeals = monthlyDealsRaw.filter((d) =>
-//       isSameUtcMonth(d.createddate, targetY, targetM)
-//     );
-
-//     const agents = await Agent.find({ isActive: true });
-//     const agentMap = new Map(
-//       agents.map((a) => [normalizeAgentName(a.agentName), a])
-//     );
-
-//     // ===== MONTHLY DEAL COUNTS =====
-//     const dealCountsByAgent = new Map();
-//     const unmatchedMonthly = [];
-
-//     for (const deal of monthlyDeals) {
-//       // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
-//       const names = [];
-
-//       if (deal.deal_agent) {
-//         names.push(deal.deal_agent.trim());
-//       }
-
-//       if (deal.deal_agent_2) {
-//         names.push(deal.deal_agent_2.trim());
-//       }
-
-//       // If no deal_agent fields, skip this deal
-//       if (names.length === 0) continue;
-
-//       for (const nm of names) {
-//         const key = normalizeAgentName(nm);
-//         if (!key || !agentMap.has(key)) {
-//           if (nm && !unmatchedMonthly.includes(nm)) unmatchedMonthly.push(nm);
-//           continue;
-//         }
-//         dealCountsByAgent.set(key, (dealCountsByAgent.get(key) || 0) + 1);
-//       }
-//     }
-
-//     // ===== YTD LAST DEAL DATE =====
-//     const ytdDeals = ytdDealsRaw;
-// const agentLastDealDateYTD = new Map();
-// const unmatchedYtd = [];
-
-// for (const deal of ytdDeals) {
-//   // Primary agents
-//   let candidateNames = [];
-//   if (deal.deal_agent) candidateNames.push(deal.deal_agent.trim());
-//   if (deal.deal_agent_2) candidateNames.push(deal.deal_agent_2.trim());
-
-//   // 🔁 Fallbacks ONLY for lastDealDate:
-//   // If primary fields missing, look into commission_agents, then owner_name
-//   if (candidateNames.length === 0) {
-//     const fromCommission = splitCommissionAgents(deal.commission_agents);
-//     if (fromCommission.length) {
-//       candidateNames = fromCommission;
-//     } else if (deal.owner_name) {
-//       candidateNames = [deal.owner_name.trim()];
-//     }
-//   }
-
-//   if (candidateNames.length === 0) continue;
-
-//   const dealDate = getDealDate(deal);
-//   if (!dealDate) continue;
-
-//   // Deduplicate per deal by normalized key
-//   const uniq = uniqueNormalizedNames(candidateNames);
-
-//   for (const { raw, key } of uniq) {
-//     if (!agentMap.has(key)) {
-//       if (raw && !unmatchedYtd.includes(raw)) unmatchedYtd.push(raw);
-//       continue;
-//     }
-//     const prev = agentLastDealDateYTD.get(key);
-//     if (!prev || dealDate > prev) {
-//       agentLastDealDateYTD.set(key, dealDate);
-//     }
-//   }
-// }
-
-//     // ===== UPDATE AGENTS (DEAL METRICS ONLY) =====
-//     // Calculate days using UTC midnight for consistency
-//     const todayUTC = new Date();
-//     todayUTC.setUTCHours(0, 0, 0, 0);
-
-//     const ops = [];
-//     let agentsUpdated = 0;
-//     const agentDeals = [];
-
-//     for (const [key, agent] of agentMap.entries()) {
-//       const dealCount = dealCountsByAgent.get(key) || 0;
-//       const lastDealDate = agentLastDealDateYTD.get(key) || null;
-
-//       // Calculate days properly using UTC dates
-//       let lastDealDays = null;
-//       if (lastDealDate) {
-//         const dealDateUTC = new Date(lastDealDate);
-//         dealDateUTC.setUTCHours(0, 0, 0, 0);
-
-//         // Calculate difference in days
-//         const diffMs = todayUTC.getTime() - dealDateUTC.getTime();
-//         lastDealDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-//         // Ensure it's never negative
-//         lastDealDays = Math.max(0, lastDealDays);
-//       }
-
-//       // Prepare bulk update operation
-//       ops.push({
-//         updateOne: {
-//           filter: { _id: agent._id },
-//           update: {
-//             $set: {
-//               "leaderboard.propertiesSold": dealCount,
-//               "leaderboard.lastDealDate": lastDealDate,
-//               "leaderboard.lastDealDays": lastDealDays,
-//               "leaderboard.lastUpdated": new Date(),
-//               lastUpdated: new Date(),
-//             },
-//           },
-//         },
-//       });
-
-//       agentDeals.push({
-//         agentName: agent.agentName,
-//         agentId: agent.agentId,
-//         dealCount,
-//         lastDealDate,
-//         daysSinceLastDeal: lastDealDays,
-//       });
-
-//       if (dealCount > 0) agentsUpdated++;
-//     }
-
-//     // Execute bulk update (safe & fast)
-//     if (ops.length) {
-//       await Agent.bulkWrite(ops, { ordered: false });
-//     }
-
-//     console.log(
-//       `✅ DEALS-ONLY sync completed for ${targetY}-${String(
-//         targetM + 1
-//       ).padStart(2, "0")} (UTC).`
-//     );
-//     console.log(
-//       `   - Monthly deals (after strict UTC filter): ${monthlyDeals.length}`
-//     );
-//     console.log(`   - YTD deals scanned: ${ytdDeals.length}`);
-//     console.log(`   - Agents updated: ${agentsUpdated}`);
-
-//     return res.status(200).json({
-//       success: true,
-//       message: `Successfully synced ${monthlyDeals.length} monthly deals (strict UTC month). Updated ${agentsUpdated} agents with deal counts only.`,
-//       note: "Deals assigned only to deal_agent and deal_agent_2 (referrers excluded). Month inclusion = createddate in target UTC month.",
-//       data: {
-//         period: month,
-//         targetUTC: { year: targetY, monthIndex0: targetM },
-//         totalDealsReturnedByAPI: monthlyDealsRaw.length,
-//         totalDealsCountedAfterStrictFilter: monthlyDeals.length,
-//         agentsUpdated,
-//         agentDeals: agentDeals.sort((a, b) => b.dealCount - a.dealCount),
-//         unmatchedOwners: {
-//           monthly: unmatchedMonthly,
-//           ytd: unmatchedYtd,
-//         },
-//       },
-//     });
-//   } catch (error) {
-//     console.error("❌ Error syncing deals:", error.message);
-//     return res.status(500).json({ success: false, error: error.message });
-//   }
-// };
 const syncAgentDealsFromSalesforce = async (req, res) => {
   try {
     const { month = "this_month" } = req.query;
@@ -3692,9 +4909,6 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
   }
 };
 
-
-
-
 const syncAgentCommissionsFromSalesforce = async (req, res) => {
   try {
     const nowUTC = new Date();
@@ -3823,7 +5037,6 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
   }
 };
 
-
 const syncAgentViewingsFromSalesforce = async (req, res) => {
   try {
     const nowUTC = new Date();
@@ -3892,7 +5105,10 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
     console.log(
-      `✅ Viewings sync completed for UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}.`
+      `✅ Viewings sync completed for UTC ${targetY}-${String(targetM + 1).padStart(
+        2,
+        "0"
+      )}.`
     );
 
     return res.status(200).json({
@@ -3928,20 +5144,19 @@ const syncAgentViewingsFromSalesforce = async (req, res) => {
   }
 };
 
-
 // Monthly properties (manual trigger)
 const updateMonthlyPropertiesForAllAgents = async (req, res) => {
   try {
     console.log("📊 Starting monthly properties update...");
     const result = await Agent.updateAllAgentsMonthlyProperties();
-    
+
     return res.status(200).json({
       success: true,
       message: "Successfully updated monthly properties for all agents",
       data: {
         ...result,
-        note: "Relisted properties (IDs ending with -1, -2, -3, etc.) are excluded from counts"
-      }
+        note: "Relisted properties (IDs ending with -1, -2, -3, etc.) are excluded from counts",
+      },
     });
   } catch (error) {
     console.error("❌ Error updating monthly properties:", error.message);
@@ -3952,7 +5167,6 @@ const updateMonthlyPropertiesForAllAgents = async (req, res) => {
     });
   }
 };
-
 
 module.exports = {
   // Leaderboard
