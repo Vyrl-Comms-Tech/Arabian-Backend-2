@@ -4532,17 +4532,19 @@ function setupCronJobs() {
     return;
   }
 
-  // Every 3 minutes, pinned to UTC
+  // Every 2 minutes, pinned to UTC
   cron.schedule(
-    "*/3 * * * *",
+    "*/2 * * * *",
     async () => {
+      const now = new Date().toISOString();
+      console.log(`🔔 [CRON TICK] Triggered at ${now} (UTC)`);
       await runAllSyncs(); // mutex-protected, snapshot-style
     },
     { timezone: "UTC" }
   );
 
   cronScheduled = true;
-  console.log("✅ Cron job scheduled: Salesforce sync will run every 3 minutes (UTC)");
+  console.log("✅ Cron job scheduled: Salesforce sync will run every 2 minutes (UTC)");
 
   // Optional immediate run (also mutex-protected)
   console.log("🚀 Running initial sync on startup...");
