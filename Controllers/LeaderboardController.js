@@ -4603,7 +4603,7 @@ const getLeaderboardAgents = async (req, res) => {
       "Kevin Dolan",
       "Joe Chiffi",
       "Christian Curran",
-      "Pratik Das",
+      // "Pratik Das",
       "Amin Labioui",
       "Shaheen Emami",
       "Jack Evans",
