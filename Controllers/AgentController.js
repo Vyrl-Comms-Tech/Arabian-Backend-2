@@ -23,6 +23,14 @@ const createAgent = async (req, res) => {
       req.body.superAgent = isTruthy(req.body.superAgent);
     }
 
+    // ✅ NEW: Handle activeOnLeaderboard boolean
+    if (req.body.activeOnLeaderboard !== undefined) {
+      req.body.activeOnLeaderboard = isTruthy(req.body.activeOnLeaderboard);
+    } else {
+      // Default to true if not provided
+      req.body.activeOnLeaderboard = true;
+    }
+
     // Validate and enforce unique sequenceNumber if provided
     if (req.body.sequenceNumber) {
       const sequenceNumber = clampInt(req.body.sequenceNumber);
@@ -55,7 +63,6 @@ const createAgent = async (req, res) => {
     return res.status(400).json({ success: false, error: err.message });
   }
 };
-
 const getAgents = async (req, res) => {
   try {
     const pipeline = [
@@ -79,6 +86,7 @@ const getAgents = async (req, res) => {
           leaderboard: 1,
           sequenceNumber: 1,
           reraNumber: 1,
+          activeOnLeaderboard: 1,
 
           // computed count (from properties[])
           propertiesCount: { $size: { $ifNull: ["$properties", []] } },
@@ -112,13 +120,36 @@ const getAgentById = async (req, res) => {
   }
 };
 
-// Agent k email ajaty h jesy single property page khulta hai
 const getAgentByEmail = async (req, res) => {
   try {
-    const agent = await Agent.findOne({ email: req.query.email });
+    const agent = await Agent.findOne(
+      { email: req.query.email },
+      {
+        agentName: 1,
+        designation: 1,
+        reraNumber: 1,
+        specialistAreas: 1,
+        email: 1,
+        phone: 1,
+        whatsapp: 1,
+        activeSaleListings: 1,
+        propertiesSoldLast15Days: 1,
+        isActive: 1,
+        agentId: 1,
+        registeredDate: 1,
+        lastUpdated: 1,
+        blogs: 1,
+        imageUrl: 1,
+        agentLanguage: 1,
+        leaderboard: 1,
+        superAgent: 1,
+      }
+    );
+
     if (!agent) {
       return res.status(404).json({ success: false, error: "Agent not found" });
     }
+
     return res.status(200).json({ success: true, data: agent });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -194,6 +225,7 @@ const updateAgent = async (req, res) => {
         "agentLanguage",
         "isActive",
         "superAgent",
+        "activeOnLeaderboard", // ✅ NEW: Added activeOnLeaderboard field
       ];
 
       for (const field of allowedFields) {
@@ -225,6 +257,7 @@ const updateAgent = async (req, res) => {
 
           case "isActive":
           case "superAgent":
+          case "activeOnLeaderboard": // ✅ NEW: Handle activeOnLeaderboard boolean
             updateObj[field] = isTruthy(value);
             break;
 
@@ -329,7 +362,6 @@ const updateAgent = async (req, res) => {
     });
   }
 };
-
 const getAgentsBySequence = async (req, res) => {
   try {
     const { activeOnly = "true" } = req.query;
