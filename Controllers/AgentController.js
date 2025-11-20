@@ -225,7 +225,7 @@ const updateAgent = async (req, res) => {
         "agentLanguage",
         "isActive",
         "superAgent",
-        "activeOnLeaderboard", // ✅ NEW: Added activeOnLeaderboard field
+        "activeOnLeaderboard", 
       ];
 
       for (const field of allowedFields) {

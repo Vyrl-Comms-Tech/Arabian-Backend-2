@@ -3626,6 +3626,59 @@
 
 
 
+// New Helpers
+
+
+// function getDealDate(deal) {
+//   // Priority: createddate -> deal_agreed_date -> lastmodifieddate
+//   return (
+//     parseUtcDate(deal.createddate) ||
+//     parseUtcDate(deal.deal_agreed_date) ||
+//     parseUtcDate(deal.lastmodifieddate)
+//   );
+// }
+
+// function splitCommissionAgents(str) {
+//   if (!str) return [];
+//   return str
+//     .split(/[;,]/)
+//     .map((s) => s.trim())
+//     .filter(Boolean);
+// }
+
+// function uniqueNormalizedNames(names) {
+//   const seen = new Set();
+//   const out = [];
+//   for (const n of names) {
+//     const key = normalizeAgentName(n);
+//     if (!key || seen.has(key)) continue;
+//     seen.add(key);
+//     out.push({ raw: n, key });
+//   }
+//   return out;
+// }
+
+// function amountNumber(raw) {
+//   return typeof raw === "string" ? Number(raw.replace(/[, ]/g, "")) : Number(raw) || 0;
+// }
+
+
+// function parseUtcDate(s) {
+//   if (!s) return null;
+//   const d = new Date(s);
+//   return isNaN(d.getTime()) ? null : d;
+// }
+
+// function twoAgentNamesOnly(deal) {
+//   const names = [];
+//   if (deal.deal_agent) names.push(deal.deal_agent.trim());
+//   if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+//   return names.filter(Boolean);
+// }
+
+// End of helper functions 
+
+
 const axios = require("axios");
 const Agent = require("../Models/AgentModel");
 const cron = require("node-cron");
@@ -3893,11 +3946,20 @@ async function buildLeaderboardSnapshotCurrentMonth() {
   const unmatchedMonthly = [];
   const unmatchedYtd = [];
 
+  // ✅ MIRRORED LOGIC: use deal_agent, deal_agent_1, deal_agent_2 + dedupe
   const namesFromDeal = (deal) => {
-    const names = [];
-    if (deal.deal_agent) names.push(deal.deal_agent.trim());
-    if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
-    return names.filter(Boolean);
+    const nameCandidates = [];
+    if (deal.deal_agent) nameCandidates.push(deal.deal_agent);
+    if (deal.deal_agent_1) nameCandidates.push(deal.deal_agent_1);
+    if (deal.deal_agent_2) nameCandidates.push(deal.deal_agent_2);
+
+    return [
+      ...new Set(
+        nameCandidates
+          .map((n) => (typeof n === "string" ? n.trim() : "").trim())
+          .filter(Boolean)
+      ),
+    ];
   };
 
   // Monthly deal counts
@@ -3944,9 +4006,28 @@ async function buildLeaderboardSnapshotCurrentMonth() {
   const unmatchedCommissionAgents = [];
   let filteredCommissionsCount = 0;
 
+  const CONTRACT_DATE_TYPES = new Set([
+    "Landlord Commission",
+    "Landlord Referral Commission",
+    "Tenant Commission",
+    "Tenant Referral",
+  ]);
+
+  const getEffectiveDateForCommission = (c) => {
+    const recordType = c?.record_type;
+
+    if (CONTRACT_DATE_TYPES.has(recordType)) {
+      return c.offer_contract_date || null;
+    }
+    return c.from_f_startdate;
+  };
+
   for (const c of commissionsRaw) {
-    const created = c?.createddate;
-    if (!isSameUtcMonth(created, targetY, targetM)) continue;
+    const effectiveDate = getEffectiveDateForCommission(c);
+    const keep =
+      effectiveDate && isSameUtcMonth(effectiveDate, targetY, targetM);
+
+    if (!keep) continue;
     filteredCommissionsCount++;
 
     const agentName = c.agent_name || c.commission_agents;
@@ -3954,8 +4035,9 @@ async function buildLeaderboardSnapshotCurrentMonth() {
 
     const key = normalizeAgentName(agentName);
     if (!agentMap.has(key)) {
-      if (!unmatchedCommissionAgents.includes(agentName))
+      if (!unmatchedCommissionAgents.includes(agentName)) {
         unmatchedCommissionAgents.push(agentName);
+      }
       continue;
     }
 
@@ -4013,6 +4095,7 @@ async function buildLeaderboardSnapshotCurrentMonth() {
     },
   };
 }
+
 
 /**
  * Apply a leaderboard snapshot to Mongo in a single bulkWrite,
@@ -4460,7 +4543,7 @@ async function syncViewingsJob() {
       2,
       "0"
     )}, ` +
-      `Viewings: ${viewings.length}, Agents Updated: ${agentsUpdated}`
+    `Viewings: ${viewings.length}, Agents Updated: ${agentsUpdated}`
   );
 
   return {
@@ -4534,7 +4617,7 @@ function setupCronJobs() {
 
   // Every 2 minutes, pinned to UTC
   cron.schedule(
-    "*/2 * * * *",
+    "*/15 * * * *",
     async () => {
       const now = new Date().toISOString();
       console.log(`🔔 [CRON TICK] Triggered at ${now} (UTC)`);
@@ -4584,10 +4667,10 @@ const getLeaderboardAgents = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const pipeline = [
-      { 
-        $match: { 
+      {
+        $match: {
           activeOnLeaderboard: true
-        } 
+        }
       },
       {
         $project: {
@@ -4709,12 +4792,22 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     const unmatchedMonthly = [];
 
     for (const deal of monthlyDeals) {
-      // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
-      const names = [];
-      if (deal.deal_agent) names.push(deal.deal_agent.trim());
-      if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+      // ✅ UPDATED LOGIC: Use deal_agent, deal_agent_1, deal_agent_2
+      const nameCandidates = [];
+      if (deal.deal_agent) nameCandidates.push(deal.deal_agent);
+      if (deal.deal_agent_1) nameCandidates.push(deal.deal_agent_1);
+      if (deal.deal_agent_2) nameCandidates.push(deal.deal_agent_2);
 
-      // If no deal_agent fields, skip this deal
+      // Clean + dedupe per deal to avoid double-counting same agent
+      const names = [
+        ...new Set(
+          nameCandidates
+            .map((n) => (typeof n === "string" ? n.trim() : "").trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      // If no agent fields, skip this deal
       if (names.length === 0) continue;
 
       for (const nm of names) {
@@ -4733,12 +4826,21 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
     const unmatchedYtd = [];
 
     for (const deal of ytdDeals) {
-      // ✅ NEW LOGIC: Use deal_agent and deal_agent_2 fields only
-      const names = [];
-      if (deal.deal_agent) names.push(deal.deal_agent.trim());
-      if (deal.deal_agent_2) names.push(deal.deal_agent_2.trim());
+      // ✅ UPDATED LOGIC: Use deal_agent, deal_agent_1, deal_agent_2
+      const nameCandidates = [];
+      if (deal.deal_agent) nameCandidates.push(deal.deal_agent);
+      if (deal.deal_agent_1) nameCandidates.push(deal.deal_agent_1);
+      if (deal.deal_agent_2) nameCandidates.push(deal.deal_agent_2);
 
-      // If no deal_agent fields, skip this deal
+      const names = [
+        ...new Set(
+          nameCandidates
+            .map((n) => (typeof n === "string" ? n.trim() : "").trim())
+            .filter(Boolean)
+        ),
+      ];
+
+      // If no agent fields, skip this deal
       if (names.length === 0) continue;
 
       const created = deal.createddate;
@@ -4825,14 +4927,16 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
         "0"
       )} (UTC).`
     );
-    console.log(`- Monthly deals (after strict UTC filter): ${monthlyDeals.length}`);
+    console.log(
+      `- Monthly deals (after strict UTC filter): ${monthlyDeals.length}`
+    );
     console.log(`- YTD deals scanned: ${ytdDeals.length}`);
     console.log(`- Agents updated: ${agentsUpdated}`);
 
     return res.status(200).json({
       success: true,
       message: `Successfully synced ${monthlyDeals.length} monthly deals (strict UTC month). Updated ${agentsUpdated} agents with deal counts only.`,
-      note: "Deals assigned only to deal_agent and deal_agent_2 (referrers excluded). Month inclusion = createddate in target UTC month.",
+      note: "Deals assigned using deal_agent, deal_agent_1 and deal_agent_2 (referrers excluded). Month inclusion = createddate in target UTC month.",
       data: {
         period: month,
         targetUTC: { year: targetY, monthIndex0: targetM },
@@ -4855,6 +4959,134 @@ const syncAgentDealsFromSalesforce = async (req, res) => {
   }
 };
 
+
+// const syncAgentCommissionsFromSalesforce = async (req, res) => {
+//   try {
+//     const nowUTC = new Date();
+//     const targetY = nowUTC.getUTCFullYear();
+//     const targetM = nowUTC.getUTCMonth();
+
+//     console.log(
+//       `🔄 Starting Salesforce COMMISSIONS sync (single dataset) -> UTC ${targetY}-${String(
+//         targetM + 1
+//       ).padStart(2, "0")}`
+//     );
+
+//     const commissionsResp = await sfGet("/services/apexrest/commissions");
+//     const commissions = commissionsResp?.data?.commissions || [];
+
+//     const agents = await Agent.find({ isActive: true });
+//     const agentMap = new Map(
+//       agents.map((a) => [normalizeAgentName(a.agentName), a])
+//     );
+
+//     const commissionsByAgent = new Map();
+//     const unmatchedCommissionAgents = [];
+//     let filteredCount = 0;
+
+//     const traceIncluded = [];
+//     const traceSkipped = [];
+
+//     for (const c of commissions) {
+//       const created = c?.createddate;
+//       const keep = isSameUtcMonth(created, targetY, targetM);
+
+//       if (!keep) {
+//         if (traceSkipped.length < 20)
+//           traceSkipped.push({
+//             ref: c.commission_ref_no,
+//             agent: c.agent_name || c.commission_agents,
+//             created,
+//           });
+//         continue;
+//       }
+
+//       filteredCount++;
+//       if (traceIncluded.length < 20)
+//         traceIncluded.push({
+//           ref: c.commission_ref_no,
+//           agent: c.agent_name || c.commission_agents,
+//           created,
+//         });
+
+//       const agentName = c.agent_name || c.commission_agents;
+//       if (!agentName) continue;
+
+//       const key = normalizeAgentName(agentName);
+//       if (!agentMap.has(key)) {
+//         if (!unmatchedCommissionAgents.includes(agentName))
+//           unmatchedCommissionAgents.push(agentName);
+//         continue;
+//       }
+
+//       const raw = c.commission_amount_excl_vat ?? c.total_commissions ?? 0;
+//       const amount = amountNumber(raw);
+
+//       commissionsByAgent.set(key, (commissionsByAgent.get(key) || 0) + amount);
+//     }
+
+//     const canZero = allowZeroingNow();
+//     const ops = [];
+//     let agentsUpdated = 0;
+//     const agentCommissions = [];
+
+//     for (const [key, agent] of agentMap.entries()) {
+//       const totalCommission =
+//         Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
+
+//       const $set = {
+//         "leaderboard.lastUpdated": new Date(),
+//         lastUpdated: new Date(),
+//       };
+//       if (totalCommission !== 0 || canZero) {
+//         $set["leaderboard.totalCommission"] = totalCommission;
+//       }
+
+//       ops.push({
+//         updateOne: {
+//           filter: { _id: agent._id },
+//           update: { $set },
+//         },
+//       });
+
+//       if (totalCommission > 0) agentsUpdated++;
+//       agentCommissions.push({
+//         agentName: agent.agentName,
+//         agentId: agent.agentId,
+//         totalCommission,
+//         currentDeals: agent.leaderboard?.propertiesSold || 0,
+//       });
+//     }
+
+//     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
+
+//     console.log(
+//       `✅ COMMISSIONS sync completed for UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+//     );
+//     console.log(`   - Current month records: ${filteredCount}`);
+//     console.log(`   - Agents updated: ${agentsUpdated}`);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `Synced ${filteredCount} commission records for current month (UTC).`,
+//       data: {
+//         targetUTC: { year: targetY, monthIndex0: targetM },
+//         totalCommissionRecordsReturned: commissions.length,
+//         currentMonthRecords: filteredCount,
+//         agentsWithCommission: agentsUpdated,
+//         agentsResetToZero: agents.length - agentsUpdated,
+//         agentCommissions: agentCommissions
+//           .filter((a) => a.totalCommission > 0)
+//           .sort((a, b) => b.totalCommission - a.totalCommission),
+//         unmatchedAgents: unmatchedCommissionAgents,
+//         debugSample: { includedFirst20: traceIncluded, skippedFirst20: traceSkipped },
+//       },
+//     });
+//   } catch (error) {
+//     console.error("❌ Error syncing commissions:", error);
+//     return res.status(500).json({ success: false, error: error.message });
+//   }
+// };
 const syncAgentCommissionsFromSalesforce = async (req, res) => {
   try {
     const nowUTC = new Date();
@@ -4875,6 +5107,28 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
       agents.map((a) => [normalizeAgentName(a.agentName), a])
     );
 
+    // 🔹 Record types that should use offer_contract_date for month mapping
+    const CONTRACT_DATE_TYPES = new Set([
+      "Landlord Commission",
+      "Landlord Referral Commission",
+      "Tenant Commission",
+      "Tenant Referral",
+    ]);
+
+    // Funcion to check record type and get appropriate date to map monthly commission for agent 
+    const getEffectiveDateForCommission = (c) => {
+      const recordType = c?.record_type;
+
+      // For these types: use offer_contract_date
+      if (CONTRACT_DATE_TYPES.has(recordType)) {
+        return c.offer_contract_date || null;
+      }
+
+      // For all other record types: use from_f_startdate
+      return c.from_f_startdate
+      
+    };
+
     const commissionsByAgent = new Map();
     const unmatchedCommissionAgents = [];
     let filteredCount = 0;
@@ -4883,15 +5137,18 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
     const traceSkipped = [];
 
     for (const c of commissions) {
-      const created = c?.createddate;
-      const keep = isSameUtcMonth(created, targetY, targetM);
+      const effectiveDate = getEffectiveDateForCommission(c);
+      const keep =
+        effectiveDate && isSameUtcMonth(effectiveDate, targetY, targetM);
 
       if (!keep) {
         if (traceSkipped.length < 20)
           traceSkipped.push({
             ref: c.commission_ref_no,
             agent: c.agent_name || c.commission_agents,
-            created,
+            record_type: c.record_type,
+            effectiveDate,
+            created: c.createddate,
           });
         continue;
       }
@@ -4901,7 +5158,9 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
         traceIncluded.push({
           ref: c.commission_ref_no,
           agent: c.agent_name || c.commission_agents,
-          created,
+          record_type: c.record_type,
+          effectiveDate,
+          created: c.createddate,
         });
 
       const agentName = c.agent_name || c.commission_agents;
@@ -4929,10 +5188,12 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
       const totalCommission =
         Math.round((commissionsByAgent.get(key) || 0) * 100) / 100;
 
+      const now = new Date();
       const $set = {
-        "leaderboard.lastUpdated": new Date(),
-        lastUpdated: new Date(),
+        "leaderboard.lastUpdated": now,
+        lastUpdated: now,
       };
+
       if (totalCommission !== 0 || canZero) {
         $set["leaderboard.totalCommission"] = totalCommission;
       }
@@ -4956,14 +5217,16 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
     if (ops.length) await Agent.bulkWrite(ops, { ordered: false });
 
     console.log(
-      `✅ COMMISSIONS sync completed for UTC ${targetY}-${String(targetM + 1).padStart(2, "0")}`
+      `✅ COMMISSIONS sync completed for UTC ${targetY}-${String(
+        targetM + 1
+      ).padStart(2, "0")}`
     );
-    console.log(`   - Current month records: ${filteredCount}`);
+    console.log(`   - Current month records (by effective date): ${filteredCount}`);
     console.log(`   - Agents updated: ${agentsUpdated}`);
 
     return res.status(200).json({
       success: true,
-      message: `Synced ${filteredCount} commission records for current month (UTC).`,
+      message: `Synced ${filteredCount} commission records for current month (UTC) based on business logic dates.`,
       data: {
         targetUTC: { year: targetY, monthIndex0: targetM },
         totalCommissionRecordsReturned: commissions.length,
@@ -4974,7 +5237,10 @@ const syncAgentCommissionsFromSalesforce = async (req, res) => {
           .filter((a) => a.totalCommission > 0)
           .sort((a, b) => b.totalCommission - a.totalCommission),
         unmatchedAgents: unmatchedCommissionAgents,
-        debugSample: { includedFirst20: traceIncluded, skippedFirst20: traceSkipped },
+        debugSample: {
+          includedFirst20: traceIncluded,
+          skippedFirst20: traceSkipped,
+        },
       },
     });
   } catch (error) {

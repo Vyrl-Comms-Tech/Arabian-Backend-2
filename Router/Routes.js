@@ -1,6 +1,5 @@
 // const getAllProperties = require("../Controllers/allPropertiesController");
 const PropertyController = require("../Controllers/allPropertiesController");
-
 // const getSaleProperties = require("../Controllers/salePropertiesController");
 // const RentProperties = require("../Controllers/rentPropertiesController");
 // const getSingleProperty = require("../Controllers/GetSingleProperty");

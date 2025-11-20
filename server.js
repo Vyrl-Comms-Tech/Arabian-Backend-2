@@ -27,6 +27,7 @@ cloudinary.config({
 });
 
 // ---- Multer setup ----
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadPath = path.join(__dirname, "uploads"); // ← FIXED: Remove '../'
