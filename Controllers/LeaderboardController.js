@@ -4617,7 +4617,7 @@ function setupCronJobs() {
 
   // Every 2 minutes, pinned to UTC
   cron.schedule(
-    "*/15 * * * *",
+    "*/2 * * * *",
     async () => {
       const now = new Date().toISOString();
       console.log(`🔔 [CRON TICK] Triggered at ${now} (UTC)`);

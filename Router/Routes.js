@@ -94,17 +94,33 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
 });
 // Hero Content
+// router.get("/get-hero", HeroController.getHero);
+// router.post(
+//   "/add-replace",
+//   HeroController.upload.single("media"),
+//   HeroController.addOrReplaceHero
+// );
+// router.put(
+//   "/update",
+//   HeroController.upload.single("media"),
+//   HeroController.updateHero
+// );
+
 router.get("/get-hero", HeroController.getHero);
+
 router.post(
   "/add-replace",
-  HeroController.upload.single("media"),
+  HeroController.upload.single("media"), // field name: "media"
   HeroController.addOrReplaceHero
 );
+
 router.put(
   "/update",
-  HeroController.upload.single("media"),
+  HeroController.upload.single("media"), // field name: "media"
   HeroController.updateHero
 );
+
+
 
 // Contact us
 router.post("/Contact", ContactUs.createContact);
